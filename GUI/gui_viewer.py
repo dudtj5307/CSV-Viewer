@@ -5,10 +5,10 @@ from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView,
 from PyQt6.QtGui import QIcon, QBrush, QColor, QMovie
 from PyQt6.QtCore import Qt, QTimer, QSize
 
-from utils.viewer.table_model import CSVTableModel
-from utils.viewer.filter_model import CSVFilterProxyModel
-from utils.viewer.csv_loader import CSVLoaderThread
-from utils.viewer.search_model import SearchModel
+from utils.table_model import CSVTableModel
+from utils.filter_model import CSVFilterProxyModel
+from utils.csv_loader import CSVLoaderThread
+from utils.search_model import SearchModel
 
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
 from GUI.ui.widget_esc import Ui_WidgetESC

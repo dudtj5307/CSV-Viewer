@@ -51,7 +51,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['GUI\\res\\PPS.ico'],
+    icon=['GUI\\res\\button_csv_view.ico'],
+    contents_directory='_python_lib',   # onedir 라이브러리 폴더명 (_internal → _python_lib). EXE 인자임에 주의
 )
 
 coll = COLLECT(
