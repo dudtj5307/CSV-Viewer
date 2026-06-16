@@ -174,7 +174,7 @@ class Ui_ViewerWindow(object):
         self.frame_2.setObjectName("frame_2")
         self.button_yellow = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_yellow.setEnabled(True)
-        self.button_yellow.setGeometry(QtCore.QRect(254, 29, 39, 19))
+        self.button_yellow.setGeometry(QtCore.QRect(259, 29, 39, 19))
         self.button_yellow.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(255, 247, 1);\n"
 "    border: 1px solid black;\n"
@@ -197,7 +197,7 @@ class Ui_ViewerWindow(object):
         self.button_yellow.setObjectName("button_yellow")
         self.button_green = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_green.setEnabled(True)
-        self.button_green.setGeometry(QtCore.QRect(294, 29, 39, 19))
+        self.button_green.setGeometry(QtCore.QRect(299, 29, 39, 19))
         self.button_green.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(0, 255, 60);\n"
 "    border: 1px solid black;\n"
@@ -220,7 +220,7 @@ class Ui_ViewerWindow(object):
         self.button_green.setObjectName("button_green")
         self.button_blue = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_blue.setEnabled(True)
-        self.button_blue.setGeometry(QtCore.QRect(334, 29, 39, 19))
+        self.button_blue.setGeometry(QtCore.QRect(339, 29, 39, 19))
         self.button_blue.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(0, 89, 255);\n"
 "    border: 1px solid black;\n"
@@ -243,7 +243,7 @@ class Ui_ViewerWindow(object):
         self.button_blue.setObjectName("button_blue")
         self.button_white = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_white.setEnabled(True)
-        self.button_white.setGeometry(QtCore.QRect(174, 29, 39, 19))
+        self.button_white.setGeometry(QtCore.QRect(179, 29, 39, 19))
         self.button_white.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
 "    border: 1px solid black;\n"
@@ -266,7 +266,7 @@ class Ui_ViewerWindow(object):
         self.button_white.setObjectName("button_white")
         self.button_red = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_red.setEnabled(True)
-        self.button_red.setGeometry(QtCore.QRect(214, 29, 39, 19))
+        self.button_red.setGeometry(QtCore.QRect(219, 29, 39, 19))
         self.button_red.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(223, 20, 23);\n"
 "    border: 1px solid black;\n"
@@ -288,7 +288,7 @@ class Ui_ViewerWindow(object):
         self.button_red.setObjectName("button_red")
         self.button_none = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_none.setEnabled(True)
-        self.button_none.setGeometry(QtCore.QRect(153, 29, 20, 20))
+        self.button_none.setGeometry(QtCore.QRect(157, 29, 20, 20))
         font = QtGui.QFont()
         font.setBold(True)
         self.button_none.setFont(font)
@@ -315,7 +315,7 @@ class Ui_ViewerWindow(object):
         self.button_none.setObjectName("button_none")
         self.button_more = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_more.setEnabled(True)
-        self.button_more.setGeometry(QtCore.QRect(414, 29, 39, 19))
+        self.button_more.setGeometry(QtCore.QRect(419, 29, 39, 19))
         self.button_more.setStyleSheet("QPushButton {\n"
 "    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0.8,\n"
 "        stop:0 #FF0000, stop:0.25 #FF7F00, stop:0.40 #FFFF00,\n"
@@ -395,7 +395,7 @@ class Ui_ViewerWindow(object):
         self.button_csv_folder.setObjectName("button_csv_folder")
         self.button_purple = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_purple.setEnabled(True)
-        self.button_purple.setGeometry(QtCore.QRect(374, 29, 39, 19))
+        self.button_purple.setGeometry(QtCore.QRect(379, 29, 39, 19))
         self.button_purple.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(200, 50, 200);\n"
 "    border: 1px solid black;\n"
@@ -424,6 +424,21 @@ class Ui_ViewerWindow(object):
 "}")
         self.edit_csv_path2.setCursorPosition(0)
         self.edit_csv_path2.setObjectName("edit_csv_path2")
+        self.edit_csvname_find = QtWidgets.QLineEdit(parent=self.frame_2)
+        self.edit_csvname_find.setGeometry(QtCore.QRect(9, 30, 140, 20))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.MinimumExpanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.edit_csvname_find.sizePolicy().hasHeightForWidth())
+        self.edit_csvname_find.setSizePolicy(sizePolicy)
+        self.edit_csvname_find.setMinimumSize(QtCore.QSize(140, 0))
+        self.edit_csvname_find.setMaximumSize(QtCore.QSize(140, 16777215))
+        self.edit_csvname_find.setStyleSheet("QLineEdit {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    border-radius: 1px;\n"
+"    padding-left: 2px;\n"
+"}")
+        self.edit_csvname_find.setObjectName("edit_csvname_find")
         self.gridLayout_3.addWidget(self.frame_2, 0, 0, 1, 1)
         self.frame = QtWidgets.QFrame(parent=self.centralwidget)
         self.frame.setStyleSheet("border: 0px;")
@@ -431,6 +446,7 @@ class Ui_ViewerWindow(object):
         self.frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         self.frame.setObjectName("frame")
         self.gridLayout = QtWidgets.QGridLayout(self.frame)
+        self.gridLayout.setContentsMargins(-1, 4, -1, -1)
         self.gridLayout.setObjectName("gridLayout")
         self.table_csv = QtWidgets.QTableView(parent=self.frame)
         self.table_csv.setEnabled(True)

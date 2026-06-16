@@ -45,6 +45,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._set_path_fields()
         self.button_csv_folder.clicked.connect(self.open_csv_folder)
 
+        # edit_csv_path(상위 경로) 전체를 클릭하면 폴더 선택 버튼과 동일 동작 (readOnly라 클릭 전용으로 사용)
+        self.edit_csv_path.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_csv_path.mousePressEvent = lambda event: self.open_csv_folder()
+
         # 폴더명 변경(rename): 폴더명이 실제와 달라지면 버튼 활성화
         self.button_rename.setEnabled(False)
         self.edit_csv_path2.textChanged.connect(self._on_folder_name_edited)
@@ -79,6 +83,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # CSV List
         self.list_csv_names.currentItemChanged.connect(self.clicked_csv_list)
+
+        # CSV 이름 검색칸: 입력 문자를 포함하는 항목만 표시 + 우측 'x'(지우기) 버튼
+        self.edit_csvname_find.setClearButtonEnabled(True)
+        self.edit_csvname_find.textChanged.connect(self._filter_csv_list)
 
         # ESC widget for closing this window
         self.last_esc_time = 0
@@ -177,9 +185,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         elif event.key() == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.copy_selection()
 
-        # 'F5' Key Pressed -> Reload CSV
+        # 'F5' Key Pressed -> list 포커스: 폴더 CSV 목록 갱신 / 그 외(table 등): 현재 CSV 데이터 갱신
         elif event.key() == Qt.Key.Key_F5:
-            self.reload_current_csv()
+            if self.list_csv_names.hasFocus():
+                self.reload_csv_list()
+            else:
+                self.reload_current_csv()
 
         # 'Home' Key Pressed
         elif event.key() == Qt.Key.Key_Home:
@@ -220,6 +231,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         for file_name in self._safe_listdir():
             if file_name.lower().endswith('.csv'):
                 self.add_item(file_name.split('.csv')[0])   # 표시명 = 확장자 제외
+
+    def _filter_csv_list(self, text):
+        # CSV 이름 검색: 입력 문자열을 포함하는 항목만 표시 (대소문자 무시)
+        keyword = text.strip().lower()
+        for i in range(self.list_csv_names.count()):
+            item = self.list_csv_names.item(i)
+            item.setHidden(keyword not in item.text().lower())
 
     def _safe_listdir(self):
         # 폴더가 이동/삭제/이름변경됐을 수 있으므로 안전하게 (없으면 빈 목록 → 크래시 방지)
@@ -321,6 +339,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.load_csv_list()
         self.list_csv_names.scrollToTop()                       # 새 폴더 목록은 항상 맨 위부터
         self.list_csv_names.horizontalScrollBar().setValue(0)   # 가로 스크롤도 초기화
+        self.edit_csvname_find.clear()                          # 새 폴더 -> 이름 검색 초기화
 
     def _close_ui_overlays(self):
         self.search_gui_hide()
@@ -373,7 +392,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
     def _start_loading(self, csv_file_name):
         self.table_csv.setModel(None)   # table_csv 초기화
         self._start_spinner()
-        self.paint_list_csv(csv_file_name, (220, 220, 220))  # Gray
+        self.paint_list_csv(csv_file_name, (255, 255, 225))  # Yellow
         thread = CSVLoaderThread(self._file_path(csv_file_name))
         # 로더는 전체 경로로 읽고, 콜백엔 파일명(식별자)을 넘긴다
         thread.load_complete.connect(lambda path, data, n=csv_file_name: self.csv_load_complete(n, data))
@@ -408,6 +427,45 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         else:
             self._start_loading(self.csv_file_name)
 
+    def reload_csv_list(self):
+        # list 포커스 F5: 디스크의 .csv 목록과 동기화 (추가/삭제만 반영, 나머지 캐시·작업은 보존)
+        disk = [f.split('.csv')[0] for f in self._safe_listdir() if f.lower().endswith('.csv')]
+        disk_set = set(disk)
+
+        # 사라진 파일의 캐시만 제거 (남은 파일의 필터/하이라이트/스크롤/데이터는 그대로)
+        for name in [n for n in self.cache if n not in disk_set]:
+            del self.cache[name]
+
+        prev_selected = self.csv_file_name
+
+        # 로드 상태 색 복원용 (기존 paint_list_csv 색과 동일)
+        status_color = {'ok': (230, 255, 230), 'empty': (220, 220, 220), 'fail': (255, 230, 230)}
+
+        # 리스트를 디스크 순서로 재구성 (선택 변경 시그널 차단 -> 불필요한 재로딩 방지)
+        self.list_csv_names.blockSignals(True)
+        self.list_csv_names.clear()
+        for name in disk:
+            self.add_item(name)
+            entry = self.cache.get(name)
+            if entry and entry['status'] in status_color:
+                self.paint_list_csv(name, status_color[entry['status']])
+        # 이전에 보던 CSV가 아직 있으면 조용히 다시 선택 (테이블은 그대로 두어 스크롤·필터 보존)
+        if prev_selected in disk_set:
+            items = self.list_csv_names.findItems(prev_selected, Qt.MatchFlag.MatchExactly)
+            if items:
+                self.list_csv_names.setCurrentItem(items[0])
+        self.list_csv_names.blockSignals(False)
+
+        # 보던 CSV가 삭제됐으면 화면 정리
+        if prev_selected is not None and prev_selected not in disk_set:
+            self.csv_file_name = None
+            self._close_ui_overlays()
+            self._stop_spinner()
+            self.table_csv.setModel(None)
+
+        # 검색칸에 입력이 있으면 갱신된 목록에도 동일 필터 재적용
+        self._filter_csv_list(self.edit_csvname_find.text())
+
     def reload_current_csv(self):
         if not self.csv_file_name or self.csv_file_name not in self.cache:
             return
@@ -432,9 +490,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         entry['table_data'] = None
         entry['status'] = 'empty'
         self.update_table(csv_file_name)
-        self.paint_list_csv(csv_file_name, (255, 255, 225))  # Yellow
+        self.paint_list_csv(csv_file_name, (220, 220, 220))  # Gray
 
     def csv_load_failed(self, csv_file_name):
+        # 파일이 사라져서 실패한 경우 -> 목록을 동기화해 없어진 항목 정리 (디코딩 실패는 기존대로 표시)
+        if not os.path.isfile(self._file_path(csv_file_name)):
+            self.reload_csv_list()
+            return
         # Save in cache
         entry = self._ensure_cache(csv_file_name)
         entry['table_data'] = None

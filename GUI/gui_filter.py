@@ -7,6 +7,19 @@ from PyQt6.QtCore import Qt, QEvent, QTimer, QSize
 from GUI.ui.dialog_filter import Ui_FilterForm
 
 
+def _filter_sort_key(text):
+    """필터 목록 정렬 키 (엑셀 정렬과 유사).
+
+    순수 숫자(0-9로만 구성)는 숫자값 오름차순으로, 문자가 섞인 값은
+    그 뒤에 사전순(대소문자 무시)으로 배치한다.
+    예) 100, 11, 133, 1F3, 230  →  11, 100, 133, 230, 1F3
+        ('1F3'은 'F' 때문에 문자 그룹으로 분류되어 맨 뒤)
+    """
+    if text.isascii() and text.isdigit():
+        return (0, int(text), "")
+    return (1, 0, text.lower())
+
+
 class FilterWidget(QWidget, Ui_FilterForm):
     def __init__(self, data_set, parent=None):
         super().__init__(parent)
@@ -49,7 +62,7 @@ class FilterWidget(QWidget, Ui_FilterForm):
         self.checkboxes = []
         # master_checkbox 바로 아래(= .ui의 trailing stretch 위)에 체크박스 삽입
         insert_at = self.verticalLayout.indexOf(self.master_checkbox) + 1
-        for item, status in sorted(data_set.items(), key=lambda x: x[0]):
+        for item, status in sorted(data_set.items(), key=lambda x: _filter_sort_key(x[0])):
             checkbox = QCheckBox()
             checkbox.setText(item)
             checkbox.setChecked(status)
