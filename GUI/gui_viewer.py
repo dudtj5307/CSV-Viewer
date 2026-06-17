@@ -17,7 +17,7 @@ from GUI.gui_filter import FilterHeaderView
 
 
 class ViewerWindow(QMainWindow, Ui_ViewerWindow):
-    def __init__(self, icon_path, csv_folder):
+    def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
         self.setupUi(self)
 
@@ -29,12 +29,17 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.setWindowIcon(QIcon(os.path.join(self.icon_path, "button_csv_view.png")))
 
         # CSV 위치는 3단계로 독립 관리 (전체 경로는 필요시 조합):
-        folder_full = os.path.normpath(csv_folder)
-        self.csv_folder_path = os.path.dirname(folder_full)     # 선택한 폴더가 들어있는 상위 경로
-        self.csv_folder_name = os.path.basename(folder_full)    # 선택한 CSV 폴더명
-        self.csv_file_name = None                               # 현재 선택된 CSV 파일명
+        # csv_folder 가 없으면(인자 없이 실행) 폴더 미선택 '빈 상태'로 시작한다.
+        if csv_folder:
+            folder_full = os.path.normpath(csv_folder)
+            self.csv_folder_path = os.path.dirname(folder_full)  # 선택한 폴더가 들어있는 상위 경로
+            self.csv_folder_name = os.path.basename(folder_full) # 선택한 CSV 폴더명
+        else:
+            self.csv_folder_path = ""                            # 폴더 미선택(빈) 상태
+            self.csv_folder_name = ""
+        self.csv_file_name = None                                # 현재 선택된 CSV 파일명
 
-        self.setWindowTitle(f"{self.csv_folder_name} - CSV Viewer")
+        self.setWindowTitle(self._window_title())
         self.table_csv.setStyleSheet("QTableView { background-color: white; }")
         self.table_csv.verticalHeader().setStyleSheet("QHeaderView::section:vertical { background-color: rgb(240, 240, 240); }")
 
@@ -241,12 +246,18 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def _safe_listdir(self):
         # 폴더가 이동/삭제/이름변경됐을 수 있으므로 안전하게 (없으면 빈 목록 → 크래시 방지)
+        if not self.csv_folder_name:        # 폴더 미선택(빈) 상태
+            return []
         try:
             return os.listdir(self._folder())
         except OSError:
             return []
 
     # ---------- 경로 헬퍼 (3단계 조합) ----------
+    def _window_title(self):
+        # 폴더 미선택(빈) 상태면 폴더명 없이 표시
+        return f"{self.csv_folder_name} - CSV Viewer" if self.csv_folder_name else "CSV Viewer"
+
     def _folder(self):
         # 선택된 CSV 폴더의 전체 경로
         return os.path.join(self.csv_folder_path, self.csv_folder_name)
@@ -299,7 +310,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # --- 성공: 폴더명만 갱신 (경로는 조합식, 캐시는 파일명 키라 그대로 유효) ---
         self.csv_folder_name = new_name
-        self.setWindowTitle(f"{new_name} - CSV Viewer")
+        self.setWindowTitle(self._window_title())
         self._set_path_fields()
         self.button_rename.setEnabled(False)
 
@@ -326,7 +337,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.csv_folder_path = os.path.dirname(folder_full)
         self.csv_folder_name = os.path.basename(folder_full)
         self.csv_file_name = None
-        self.setWindowTitle(f"{self.csv_folder_name} - CSV Viewer")
+        self.setWindowTitle(self._window_title())
         self._set_path_fields()
 
         self._close_ui_overlays()

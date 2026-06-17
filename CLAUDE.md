@@ -62,8 +62,10 @@ Project_CSV_Viewer/
 csv_viewer.py main()
   ├─ setup_std_streams()        : windowed에서 stdout/stderr=None 가드
   ├─ QApplication 생성
-  ├─ resolve_folder(argv[1])    : 유효 폴더면 그대로 / 없거나 무효면 폴더 선택창(취소 시 종료)
-  └─ ViewerWindow(icon_path, folder).show() → app.exec()
+  ├─ argv[1] 검사             : 유효 폴더면 folder, 없거나 무효면 None
+  ├─ ViewerWindow(icon_path, folder|None).show()  : 폴더 None이면 빈 창으로 시작
+  └─ (folder 없을 때) QTimer.singleShot(0, viewer.open_csv_folder)  : 빈 창 위에 폴더 선택창 → app.exec()
+       └─ 선택 시 _load_folder / 취소 시 빈 화면 유지
 ```
 
 - **독립성**: 각 창이 완전히 별개 프로세스 → 서로 영향 없음(하나 닫아도 나머지 유지). 여러 번 실행하면 누른 횟수만큼 창이 뜬다.
@@ -77,9 +79,8 @@ csv_viewer.py main()
 
 | 클래스 / 함수 | 파일 | 역할 |
 |--------|------|------|
-| `main()` | csv_viewer.py | 진입점. 폴더 해석 후 ViewerWindow 하나 표시 |
-| `resolve_folder()` | csv_viewer.py | 인자 폴더 유효성 검사 / 무효·없음이면 폴더 선택창 |
-| `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder)`** |
+| `main()` | csv_viewer.py | 진입점. 인자 폴더면 바로 열고, 없으면 빈 창 + 폴더 선택창(취소 시 빈 화면 유지) |
+| `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder=None)`** (None=빈 상태) |
 | `FilterHeaderView` | gui_filter.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 |
 | `FilterWidget` | gui_filter.py | 체크박스 기반 필터 UI |
 | `CSVTableModel` | viewer/table_model.py | QAbstractTableModel. rows + highlight_cells |
@@ -90,7 +91,7 @@ csv_viewer.py main()
 ### ViewerWindow 내부 구조
 
 ```
-ViewerWindow(icon_path, csv_folder)
+ViewerWindow(icon_path, csv_folder=None)   # csv_folder=None → 폴더 미선택 '빈 상태'(제목 "CSV Viewer", 목록·경로칸 비움)
 ├── icon_path : GUI/res 리소스 경로 (진입점이 resource_dir()로 주입)  ← PPS의 parent.icon_path 결합 제거
 ├── cache[csv_file_name] = {
 │     'table_data'  : raw 2D list (헤더 + 데이터 행)

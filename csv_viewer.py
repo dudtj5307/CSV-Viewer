@@ -4,13 +4,15 @@
 `CSV Viewer.exe [CSV폴더경로]` 를 여러 번 실행하면 그때마다 독립된 창이 새로 뜬다.
 (onedir 빌드라 압축해제가 없어 매 실행 콜드스타트가 가볍다 → 백엔드/IPC 불필요.)
 
-인자로 CSV 폴더를 주면 그 폴더를, 없거나 잘못된 경로면 폴더 선택창을 연다.
+인자로 CSV 폴더를 주면 그 폴더를 바로 연다. 인자가 없거나 잘못된 경로면 빈 창을
+먼저 띄운 뒤 그 위에 폴더 선택창을 올린다(취소하면 빈 화면 그대로 유지).
 """
 
 import os
 import sys
 
-from PyQt6.QtWidgets import QApplication, QFileDialog
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
 
 from GUI.gui_viewer import ViewerWindow
 
@@ -32,26 +34,23 @@ def setup_std_streams():
             sys.stderr = sink
 
 
-def resolve_folder(folder):
-    # 인자 폴더가 유효하면 그대로, 아니면(없음/무효) 폴더 선택창. 취소 시 None.
-    if folder and os.path.isdir(folder):
-        return folder
-    picked = QFileDialog.getExistingDirectory(None, "Select CSV folder", folder or "")
-    return picked or None
-
-
 def main():
     setup_std_streams()
     app = QApplication(sys.argv)
 
-    folder = resolve_folder(sys.argv[1] if len(sys.argv) > 1 else None)
-    if not folder:
-        return 0   # 인자 없이 실행 후 폴더 선택 취소 → 열 창이 없으니 종료
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    folder = arg if (arg and os.path.isdir(arg)) else None
 
-    viewer = ViewerWindow(resource_dir(), os.path.normpath(folder))
+    # 인자 폴더가 유효하면 그대로 열고, 없거나 무효면 빈 창으로 시작한다.
+    viewer = ViewerWindow(resource_dir(), os.path.normpath(folder) if folder else None)
     viewer.show()
     viewer.raise_()
     viewer.activateWindow()
+
+    # 폴더 인자가 없으면: 빈 창을 먼저 그린 뒤(이벤트 루프 진입 후) 그 위에 폴더 선택창을
+    # 띄운다. 선택 없이 닫으면 빈 화면 상태 그대로 유지한다.
+    if not folder:
+        QTimer.singleShot(0, viewer.open_csv_folder)
 
     return app.exec()
 
