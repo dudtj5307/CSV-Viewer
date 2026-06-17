@@ -820,6 +820,9 @@ QPushButton:disabled {
          <property name="autoScroll">
           <bool>true</bool>
          </property>
+         <property name="verticalScrollMode">
+          <enum>QAbstractItemView::ScrollMode::ScrollPerPixel</enum>
+         </property>
          <property name="horizontalScrollMode">
           <enum>QAbstractItemView::ScrollMode::ScrollPerPixel</enum>
          </property>
