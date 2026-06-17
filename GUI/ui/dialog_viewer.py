@@ -59,7 +59,7 @@ class Ui_ViewerWindow(object):
         self.frame_search.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         self.frame_search.setObjectName("frame_search")
         self.edit_text_input = QtWidgets.QLineEdit(parent=self.frame_search)
-        self.edit_text_input.setGeometry(QtCore.QRect(10, 5, 101, 21))
+        self.edit_text_input.setGeometry(QtCore.QRect(6, 5, 151, 21))
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -71,9 +71,9 @@ class Ui_ViewerWindow(object):
         self.edit_text_input.setObjectName("edit_text_input")
         self.button_forward = QtWidgets.QPushButton(parent=self.frame_search)
         self.button_forward.setEnabled(False)
-        self.button_forward.setGeometry(QtCore.QRect(215, 4, 21, 21))
+        self.button_forward.setGeometry(QtCore.QRect(223, 5, 21, 21))
         font = QtGui.QFont()
-        font.setPointSize(13)
+        font.setPointSize(10)
         font.setBold(True)
         self.button_forward.setFont(font)
         self.button_forward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
@@ -94,9 +94,9 @@ class Ui_ViewerWindow(object):
         self.button_forward.setObjectName("button_forward")
         self.button_backward = QtWidgets.QPushButton(parent=self.frame_search)
         self.button_backward.setEnabled(False)
-        self.button_backward.setGeometry(QtCore.QRect(240, 4, 21, 21))
+        self.button_backward.setGeometry(QtCore.QRect(248, 5, 21, 21))
         font = QtGui.QFont()
-        font.setPointSize(13)
+        font.setPointSize(10)
         font.setBold(True)
         self.button_backward.setFont(font)
         self.button_backward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
@@ -135,7 +135,7 @@ class Ui_ViewerWindow(object):
 "}")
         self.button_close.setObjectName("button_close")
         self.label_idx_count = QtWidgets.QLabel(parent=self.frame_search)
-        self.label_idx_count.setGeometry(QtCore.QRect(115, 5, 91, 21))
+        self.label_idx_count.setGeometry(QtCore.QRect(129, 5, 91, 21))
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -145,7 +145,8 @@ class Ui_ViewerWindow(object):
         self.label_idx_count.setMaximumSize(QtCore.QSize(100, 21))
         self.label_idx_count.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
         self.label_idx_count.setStyleSheet("color: rgb(50, 50, 50);\n"
-"border: 0px;")
+"border: 0px;\n"
+"background-color: rgba(253, 253, 253, 0);")
         self.label_idx_count.setText("")
         self.label_idx_count.setScaledContents(False)
         self.label_idx_count.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
@@ -345,6 +346,16 @@ class Ui_ViewerWindow(object):
         self.edit_csv_path.setStyleSheet("QLineEdit {\n"
 "    background-color: rgb(230, 230, 230);\n"
 "    padding-left: 24px;\n"
+"    border-radius: 4px;\n"
+"}\n"
+"\n"
+"QLineEdit:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QLineEdit:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
 "}")
         self.edit_csv_path.setCursorPosition(0)
         self.edit_csv_path.setReadOnly(True)
@@ -502,9 +513,9 @@ class Ui_ViewerWindow(object):
         self.edit_text_input.setToolTip(_translate("ViewerWindow", "Find Text (Enter)"))
         self.edit_text_input.setPlaceholderText(_translate("ViewerWindow", "Find Text (Enter)"))
         self.button_forward.setToolTip(_translate("ViewerWindow", "Previous (F2)"))
-        self.button_forward.setText(_translate("ViewerWindow", "<"))
+        self.button_forward.setText(_translate("ViewerWindow", "◀"))
         self.button_backward.setToolTip(_translate("ViewerWindow", "Next (F3)"))
-        self.button_backward.setText(_translate("ViewerWindow", ">"))
+        self.button_backward.setText(_translate("ViewerWindow", "▶"))
         self.button_close.setToolTip(_translate("ViewerWindow", "Close (ESC)"))
         self.button_close.setText(_translate("ViewerWindow", "×"))
         self.button_rename.setText(_translate("ViewerWindow", "Rename"))

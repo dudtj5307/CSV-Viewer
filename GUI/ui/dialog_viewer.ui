@@ -103,9 +103,9 @@ border: 0px;</string>
       <widget class="QLineEdit" name="edit_text_input">
        <property name="geometry">
         <rect>
-         <x>10</x>
+         <x>6</x>
          <y>5</y>
-         <width>101</width>
+         <width>151</width>
          <height>21</height>
         </rect>
        </property>
@@ -135,15 +135,15 @@ background-color: rgb(255, 255, 255);</string>
        </property>
        <property name="geometry">
         <rect>
-         <x>215</x>
-         <y>4</y>
+         <x>223</x>
+         <y>5</y>
          <width>21</width>
          <height>21</height>
         </rect>
        </property>
        <property name="font">
         <font>
-         <pointsize>13</pointsize>
+         <pointsize>10</pointsize>
          <bold>true</bold>
         </font>
        </property>
@@ -170,7 +170,7 @@ QPushButton:disabled {
 }</string>
        </property>
        <property name="text">
-        <string>&lt;</string>
+        <string>◀</string>
        </property>
       </widget>
       <widget class="QPushButton" name="button_backward">
@@ -179,15 +179,15 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>240</x>
-         <y>4</y>
+         <x>248</x>
+         <y>5</y>
          <width>21</width>
          <height>21</height>
         </rect>
        </property>
        <property name="font">
         <font>
-         <pointsize>13</pointsize>
+         <pointsize>10</pointsize>
          <bold>true</bold>
         </font>
        </property>
@@ -214,7 +214,7 @@ QPushButton:disabled {
 }</string>
        </property>
        <property name="text">
-        <string>&gt;</string>
+        <string>▶</string>
        </property>
       </widget>
       <widget class="QPushButton" name="button_close">
@@ -260,7 +260,7 @@ QPushButton:pressed {
       <widget class="QLabel" name="label_idx_count">
        <property name="geometry">
         <rect>
-         <x>115</x>
+         <x>129</x>
          <y>5</y>
          <width>91</width>
          <height>21</height>
@@ -289,7 +289,8 @@ QPushButton:pressed {
        </property>
        <property name="styleSheet">
         <string notr="true">color: rgb(50, 50, 50);
-border: 0px;</string>
+border: 0px;
+background-color: rgba(253, 253, 253, 0);</string>
        </property>
        <property name="text">
         <string/>
@@ -622,6 +623,16 @@ QPushButton:disabled {
         <string notr="true">QLineEdit {
 	background-color: rgb(230, 230, 230);
 	padding-left: 24px;
+    border-radius: 4px;
+}
+
+QLineEdit:hover {
+	border: 1px solid #333;
+}
+
+QLineEdit:pressed {
+    background-color: lightgray;
+ 	border: 1px solid #000;
 }</string>
        </property>
        <property name="cursorPosition">
