@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CSV Viewer MSI 설치 정의 (WiX Toolset v4+ / v6).
+
+  빌드:  installer\build_msi.ps1   (내부에서 아래를 실행)
+    wix build installer\CSVViewer.wxs -arch x64 \
+        -d "DistDir=...\dist\CSV Viewer" -d "ResRoot=...\GUI\res" \
+        -o "installer\out\CSV Viewer Setup.msi"
+
+  설치 동작:
+    - 64비트 per-machine 설치 (관리자 권한 필요)
+    - 설치 경로:  C:\Program Files\CSV Viewer
+    - 시스템 환경변수  CSV_VIEWER_HOME = 설치 경로   (제거 시 함께 삭제)
+    - 폴더 우클릭 / 폴더 빈 공간(배경) 우클릭 → "Open with CSV Viewer(V)"
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="CSV Viewer"
+      Manufacturer="yslee"
+      Version="1.0.0.0"
+      UpgradeCode="BB893716-5CA4-4B5F-8C68-437174BD6795"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <!-- 같은 UpgradeCode의 구버전을 자동 제거 후 설치 (버전 올렸을 때 업그레이드 경로) -->
+    <MajorUpgrade DowngradeErrorMessage="이미 더 최신 버전의 [ProductName] 이(가) 설치되어 있습니다." />
+
+    <!-- ★ 토글 제거: 이미 설치된 상태에서 이 MSI를 '다시' 실행하면 → 설치가 아니라 '제거'로 동작.
+         - Installed                : 이 제품(같은 ProductCode)이 이미 설치돼 있음 = 다시 실행한 경우
+         - NOT REMOVE               : msiexec /x 로 부르는 진짜 제거가 아님(중복 처리 방지)
+         - NOT UPGRADINGPRODUCTCODE : 업그레이드 중 구버전을 떼는 단계가 아님
+         REMOVE=ALL 을 CostFinalize '전'에 세팅해야 전체 제거로 비용계산된다. -->
+    <SetProperty Id="REMOVE" Value="ALL" Before="CostFinalize" Sequence="both"
+                 Condition="Installed AND NOT REMOVE AND NOT UPGRADINGPRODUCTCODE" />
+
+    <!-- cab을 MSI 안에 포함 → 단일 .msi 파일로 배포 -->
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- 제어판 '프로그램 추가/제거' 목록 아이콘 -->
+    <Icon Id="AppIcon.ico" SourceFile="$(var.ResRoot)\button_csv_view.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <!-- 설치 위치: C:\Program Files\CSV Viewer (64비트) -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="CSV Viewer" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="CSV Viewer" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="IntegrationComponents" />
+    </Feature>
+
+    <!-- (앱 본체) PyInstaller onedir 산출물(dist\CSV Viewer) 전체를 자동 수집.
+         CSV Viewer.exe 는 INSTALLFOLDER 루트, _python_lib\* 는 하위로 그대로 들어간다. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.DistDir)\**" />
+    </ComponentGroup>
+
+    <!-- (환경변수 + 우클릭 메뉴) -->
+    <ComponentGroup Id="IntegrationComponents" Directory="INSTALLFOLDER">
+
+      <!-- 요구사항 1: 시스템 환경변수 CSV_VIEWER_HOME = 설치 경로.
+           Part=all → 단독 값, Permanent=no → 제거 시 삭제. MSI가 변경을 broadcast 하므로
+           새로 뜨는 프로세스는 재부팅 없이 값을 본다. -->
+      <Component Id="EnvCsvViewerHome">
+        <Environment Id="CsvViewerHome"
+                     Name="CSV_VIEWER_HOME"
+                     Value="[INSTALLFOLDER]"
+                     Action="set"
+                     Part="all"
+                     System="yes"
+                     Permanent="no" />
+        <RegistryValue Root="HKLM" Key="Software\CSV Viewer"
+                       Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!-- 요구사항 3: 폴더 자체를 우클릭했을 때.
+           %V = 우클릭한 폴더 경로 → "CSV Viewer.exe" "그 폴더" 로 실행 -->
+      <Component Id="ShellDirectory">
+        <RegistryKey Root="HKCR" Key="Directory\shell\OpenWithCSVViewer" ForceDeleteOnUninstall="yes">
+          <RegistryValue Type="string" Value="Open with CSV Viewer(&amp;V)" KeyPath="yes" />
+          <RegistryValue Name="Icon" Type="string" Value="[INSTALLFOLDER]CSV Viewer.exe" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]CSV Viewer.exe&quot; &quot;%V&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+
+      <!-- 요구사항 4: 폴더 안 빈 공간(배경)을 우클릭했을 때.
+           배경 메뉴는 %1 이 비므로 반드시 %V(현재 보고 있는 폴더)를 써야 한다. -->
+      <Component Id="ShellBackground">
+        <RegistryKey Root="HKCR" Key="Directory\Background\shell\OpenWithCSVViewer" ForceDeleteOnUninstall="yes">
+          <RegistryValue Type="string" Value="Open with CSV Viewer(&amp;V)" KeyPath="yes" />
+          <RegistryValue Name="Icon" Type="string" Value="[INSTALLFOLDER]CSV Viewer.exe" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]CSV Viewer.exe&quot; &quot;%V&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+
+    </ComponentGroup>
+  </Package>
+</Wix>

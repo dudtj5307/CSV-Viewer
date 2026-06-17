@@ -125,6 +125,25 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 
 ---
 
+## 배포 (MSI 설치 파일)
+
+외부 노트북 배포용 **WiX 기반 MSI**. 정의/스크립트는 `installer/`, 상세는 `installer/README.md`.
+
+```powershell
+.\installer\build_msi.ps1          # dist 기반 MSI 빌드 → installer\out\CSV Viewer Setup.msi
+.\installer\build_msi.ps1 -Rebuild # PyInstaller 재빌드부터
+```
+
+- per-machine 설치(관리자 권한): `C:\Program Files\CSV Viewer`
+- 시스템 환경변수 `CSV_VIEWER_HOME` = 설치 경로
+- 폴더 / 폴더 빈 공간(배경) 우클릭 → "Open with CSV Viewer(V)" (실행: `"…\CSV Viewer.exe" "%V"`)
+- **재실행 = 제거(토글)**: 이미 설치된 상태에서 같은 MSI를 다시 실행하면 설치가 아니라 **제거**로 동작. `Installed` 일 때 `SetProperty REMOVE=ALL` 을 `CostFinalize` 전(seq 999)에 세팅. 진짜 `/x` 제거·업그레이드 중 구버전 제거와는 조건(`NOT REMOVE`, `NOT UPGRADINGPRODUCTCODE`)으로 구분.
+- **⚠ WiX 버전 v5 고정**: v6/v7은 OSMF(상용 유지비) EULA 게이트가 빌드를 막는다. `installer/CSVViewer.wxs`는 v4 네임스페이스라 v5에서 그대로 빌드된다. (`build_msi.ps1`이 `--version 5.0.2`로 설치)
+- **⚠ 버전 올릴 때**: `CSVViewer.wxs`의 `Version`만 올리면 `MajorUpgrade`가 구버전 자동 제거 후 설치. `UpgradeCode`는 **절대 변경 금지**(바꾸면 구버전과 별개 제품이 되어 중복 설치됨).
+- **⚠ `build_msi.ps1` 편집 시**: 한글 주석 포함 → UTF-8 **BOM 유지 필수**(없으면 PowerShell 5.1이 cp949로 오독해 파싱 실패).
+
+---
+
 ## 알려진 TODO / 미완성 항목
 
 - `FilterHeaderView` 셀 선택 시 열 헤더 볼드 미작동

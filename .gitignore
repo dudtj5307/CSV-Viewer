@@ -35,3 +35,6 @@ venv/
 # PyInstaller #
 build/
 dist/
+
+# MSI 빌드 산출물 (installer 소스는 추적, 결과물만 제외) #
+# installer/out/ 전부필요
