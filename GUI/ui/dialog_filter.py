@@ -13,7 +13,7 @@ class Ui_FilterForm(object):
     def setupUi(self, FilterForm):
         FilterForm.setObjectName("FilterForm")
         FilterForm.setWindowModality(QtCore.Qt.WindowModality.NonModal)
-        FilterForm.resize(177, 119)
+        FilterForm.resize(177, 106)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -74,7 +74,7 @@ class Ui_FilterForm(object):
         self.gridLayout.setObjectName("gridLayout")
         self.verticalLayout = QtWidgets.QVBoxLayout()
         self.verticalLayout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMaximumSize)
-        self.verticalLayout.setContentsMargins(5, 2, -1, -1)
+        self.verticalLayout.setContentsMargins(4, 2, 4, -1)
         self.verticalLayout.setSpacing(1)
         self.verticalLayout.setObjectName("verticalLayout")
         self.edit_filter_text = QtWidgets.QLineEdit(parent=self.widget)

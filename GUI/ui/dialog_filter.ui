@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>177</width>
-    <height>119</height>
+    <height>106</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -166,10 +166,13 @@
              <enum>QLayout::SizeConstraint::SetMaximumSize</enum>
             </property>
             <property name="leftMargin">
-             <number>5</number>
+             <number>4</number>
             </property>
             <property name="topMargin">
              <number>2</number>
+            </property>
+            <property name="rightMargin">
+             <number>4</number>
             </property>
             <item>
              <widget class="QLineEdit" name="edit_filter_text">
