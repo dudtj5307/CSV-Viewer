@@ -5,7 +5,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 csv.field_size_limit(10 * 1024 * 1024)
 
 class CSVLoaderThread(QThread):
-    load_complete = pyqtSignal(str, list)  # (파일경로, 데이터)
+    load_complete = pyqtSignal(str, object)  # (파일경로, 데이터)
     load_failed   = pyqtSignal(str)
     load_empty    = pyqtSignal(str)        # 디코딩은 됐지만 데이터 행 없음 (No Data)
 

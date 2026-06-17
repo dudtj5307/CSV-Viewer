@@ -86,7 +86,9 @@ csv_viewer.py main()
 | `CSVTableModel` | viewer/table_model.py | QAbstractTableModel. rows + highlight_cells |
 | `CSVFilterProxyModel` | viewer/filter_model.py | 열별 필터 프록시. column_filters, 헤더 `⏷` 표시 |
 | `SearchModel` | viewer/search_model.py | Ctrl+F 검색 + 하이라이트 |
-| `CSVLoaderThread` | viewer/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백) |
+| `CSVLoaderThread` | viewer/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠) |
+
+> **⚠ 함정 — 대용량 데이터 cross-thread 시그널은 `object`로 넘긴다**: `CSVLoaderThread.load_complete`를 `pyqtSignal(str, list)`로 선언하면, 워커→GUI 큐드 연결에서 PyQt가 중첩 리스트를 **QVariantList로 변환·복사**한다. 이 비용이 워커 `emit`과 **수신 GUI 스레드의 역변환(슬롯 호출 *전*에 GUI 스레드에서 수행)** 양쪽에서 발생해 18만 행 기준 **수 초간 GUI가 얼어붙는다**(읽는 동안 다른 CSV 클릭이 안 먹히던 원인. 프록시 부착(≈80ms)은 무관했음). `pyqtSignal(str, object)`(PyQt_PyObject)는 파이썬 객체를 **참조로** 넘겨 변환·복사가 0이다. 단 참조 전달이라 **emit 후 워커에서 그 데이터를 수정하면 안 된다**(현재는 emit 직후 `return`이라 안전). → 큰 데이터를 스레드 시그널로 넘길 땐 `list`/`dict` 대신 `object`.
 
 ### ViewerWindow 내부 구조
 
