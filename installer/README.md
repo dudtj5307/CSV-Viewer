@@ -59,6 +59,18 @@ msiexec /x "CSV Viewer Setup.msi" /qb
   (MSI가 환경변수 변경을 broadcast 하지만, 이미 떠 있던 창은 못 받을 수 있어 *새 창*에서 확인)
 - 아무 폴더 **우클릭** / 폴더 안 **빈 공간 우클릭** → "Open with CSV Viewer(V)"
 
+## 다른 프로그램에서 연동 (CSV_VIEWER_HOME)
+
+외부 응용 SW는 실행파일 경로를 하드코딩하지 말고 환경변수로 만들어 호출한다:
+
+- 실행파일 : **`%CSV_VIEWER_HOME%\CSV Viewer.exe`**
+- 호출     : `"%CSV_VIEWER_HOME%\CSV Viewer.exe" "<열려는 CSV 폴더>"`
+
+`CSV_VIEWER_HOME` = 설치 경로(`C:\Program Files\CSV Viewer`)라 설치 위치가 달라져도 이 변수만
+참조하면 된다. 환경변수는 **프로세스 시작 시점**에 읽히므로 설치 후 새로 시작된 프로세스에서 사용한다
+(이미 떠 있던 프로그램은 재시작 필요). C++(MFC)에서 경로 얻는 예제 코드는 루트
+[`README.md`](../README.md) 의 "외부 프로그램에서 실행" 참고.
+
 ## 자주 막히는 부분
 
 - **메뉴 아이콘이 안 보임**: 일부 환경에서 경로 공백 때문에 안 뜰 수 있음.
