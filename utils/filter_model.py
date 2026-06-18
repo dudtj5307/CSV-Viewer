@@ -162,7 +162,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             header = self._src.headerData(section, orientation, role)
             # 필터가 적용된 열은 헤더 텍스트 우측에 '⏷' 표시
             if role == Qt.ItemDataRole.DisplayRole and section in self.column_filters:
-                return f"⧓{header}"
+                return f"⧩ {header}"
             return header
         # 수직 헤더: 프록시 행 → 소스 행으로 매핑해 원본 행 번호를 유지
         if 0 <= section < len(self._accepted):

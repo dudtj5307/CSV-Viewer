@@ -116,7 +116,7 @@ border: 0px;</string>
         </sizepolicy>
        </property>
        <property name="toolTip">
-        <string>Find Text (Enter)</string>
+        <string>Search whole table (Enter)</string>
        </property>
        <property name="styleSheet">
         <string notr="true">border: 0px;
@@ -126,7 +126,7 @@ background-color: rgb(255, 255, 255);</string>
         <string/>
        </property>
        <property name="placeholderText">
-        <string>Find Text (Enter)</string>
+        <string>Search whole table (Enter)</string>
        </property>
       </widget>
       <widget class="QPushButton" name="button_forward">
@@ -135,7 +135,7 @@ background-color: rgb(255, 255, 255);</string>
        </property>
        <property name="geometry">
         <rect>
-         <x>223</x>
+         <x>228</x>
          <y>5</y>
          <width>21</width>
          <height>21</height>
@@ -143,7 +143,7 @@ background-color: rgb(255, 255, 255);</string>
        </property>
        <property name="font">
         <font>
-         <pointsize>10</pointsize>
+         <pointsize>8</pointsize>
          <bold>true</bold>
         </font>
        </property>
@@ -179,7 +179,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>248</x>
+         <x>249</x>
          <y>5</y>
          <width>21</width>
          <height>21</height>
@@ -187,7 +187,7 @@ QPushButton:disabled {
        </property>
        <property name="font">
         <font>
-         <pointsize>10</pointsize>
+         <pointsize>8</pointsize>
          <bold>true</bold>
         </font>
        </property>
@@ -260,7 +260,7 @@ QPushButton:pressed {
       <widget class="QLabel" name="label_idx_count">
        <property name="geometry">
         <rect>
-         <x>129</x>
+         <x>134</x>
          <y>5</y>
          <width>91</width>
          <height>21</height>

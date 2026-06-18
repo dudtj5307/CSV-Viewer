@@ -16,6 +16,70 @@ class SearchModel(QObject):
 
         self.is_running = False
 
+        # --- 선택 영역 검색(scoped search) ---
+        # 검색바를 열 때(capture_scope) 열/행 '전체 선택'을 1회 캡처해 검색바가 닫힐 때까지 유지.
+        # None = 제약 없음(전체). 셀 클릭·셀범위 드래그는 selectedColumns/Rows가 비어 전체검색이 된다.
+        self.scope_rows = None      # set[proxy_row] | None
+        self.scope_cols = None      # set[proxy_col] | None
+
+    @property
+    def scope_active(self):
+        return self.scope_cols is not None or self.scope_rows is not None
+
+    def reset_scope(self):
+        # 검색바를 닫을 때 호출 -> 다음에 열 때 현재 선택을 다시 캡처
+        self.scope_rows = None
+        self.scope_cols = None
+
+    def capture_scope(self):
+        # 검색바를 열 때(Ctrl+F) 호출. 열/행 '전체 선택'만 범위로 인정한다.
+        # ⚠ selectedColumns()/selectedRows()는 열 전체 선택 시 18만 행을 내부 순회해 수 초가
+        #   걸린다(측정값: 열 선택 시 합 ~3.6s). 그래서 선택 '범위'만 보고 직접 판정한다.
+        #   범위 수는 항상 소수라 즉시 끝나고, 혼합 선택으로 범위가 쪼개져도 구간 커버리지로 정확히 잡는다.
+        sel = self.table_view.selectionModel()
+        model = self.table_view.model()
+        if sel is None or model is None:
+            self.scope_cols = None
+            self.scope_rows = None
+            return
+
+        row_count, col_count = model.rowCount(), model.columnCount()
+        ranges = [(r.top(), r.bottom(), r.left(), r.right()) for r in sel.selection()]
+
+        # 열 전체 선택: 그 열을 덮는 (쪼개졌을 수 있는) 행 구간들이 [0, row_count-1]를 모두 덮으면 그 열
+        cols = set()
+        for c in range(col_count):
+            row_spans = [(top, bot) for (top, bot, left, right) in ranges if left <= c <= right]
+            if row_spans and self._spans_cover(row_spans, row_count):
+                cols.add(c)
+
+        # 행 전체 선택: 행 경계로 밴드를 나눠, 밴드를 덮는 range들의 열 구간이 모든 열을 덮으면 그 밴드의 행들
+        rows = set()
+        bounds = sorted({b for (top, bot, _, _) in ranges for b in (top, bot + 1) if 0 <= b <= row_count})
+        for i in range(len(bounds) - 1):
+            a, b = bounds[i], bounds[i + 1]
+            col_spans = [(left, right) for (top, bot, left, right) in ranges if top <= a and bot >= b - 1]
+            if col_spans and self._spans_cover(col_spans, col_count):
+                rows.update(range(a, b))
+
+        self.scope_cols = cols or None
+        self.scope_rows = rows or None
+
+    @staticmethod
+    def _spans_cover(spans, total):
+        # spans: [(lo, hi)] (양끝 포함) 구간들이 [0, total-1] 전체를 빈틈없이 덮는가
+        if total <= 0:
+            return False
+        nxt = 0
+        for lo, hi in sorted(spans):
+            if lo > nxt:            # 빈틈 발생
+                return False
+            if hi >= nxt:
+                nxt = hi + 1
+            if nxt >= total:
+                return True
+        return nxt >= total
+
     def search(self, search_text: str):
         # Return if already searching
         if self.is_running:
@@ -39,20 +103,31 @@ class SearchModel(QObject):
         rows = getattr(source_model, "rows", None)
         col_count = proxy.columnCount()
 
-        # Find in Column header (row == -1)
-        for col in range(col_count):
-            header_text = headers[col] if col < len(headers) else ""
-            if header_text and needle in str(header_text).lower():
-                self.matches.append((-1, col))
+        scope_cols, scope_rows = self.scope_cols, self.scope_rows
+        scope_active = scope_cols is not None or scope_rows is not None
+
+        # Find in Column header (row == -1) - 전체검색일 때만 (범위 지정 시 헤더 제외)
+        if not scope_active:
+            for col in range(col_count):
+                header_text = headers[col] if col < len(headers) else ""
+                if header_text and needle in str(header_text).lower():
+                    self.matches.append((-1, col))
 
         # Find in data cells - 보이는(프록시) 행만 순회하되 source 데이터를 직접 읽음
+        # 범위(scope): 전체(None) / 선택 열 / 선택 행 / 둘 다(합집합: 선택 열 OR 선택 행)
         if rows is not None and col_count:
             map_to_source = proxy.mapToSource
             proxy_index = proxy.index
             for proxy_row in range(proxy.rowCount()):
+                # 행만 지정된 범위면 범위 밖 행은 통째로 건너뜀 (열 범위가 함께면 합집합이라 못 건너뜀)
+                if scope_cols is None and scope_rows is not None and proxy_row not in scope_rows:
+                    continue
                 source_row = map_to_source(proxy_index(proxy_row, 0)).row()
                 row_data = rows[source_row]
+                row_selected = scope_rows is not None and proxy_row in scope_rows
                 for col in range(col_count):
+                    if scope_active and not (row_selected or (scope_cols is not None and col in scope_cols)):
+                        continue
                     if needle in row_data[col].lower():
                         self.matches.append((proxy_row, col))
 

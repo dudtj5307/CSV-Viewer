@@ -624,8 +624,17 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def search_gui_hide(self):
         self.frame_search.setVisible(False)
+        # 검색바를 닫으면 범위 해제 + placeholder 원복
+        self.search_model.reset_scope()
+        self.edit_text_input.setPlaceholderText("Search whole table (Enter)")
 
     def search_gui_init(self):
+        # 검색바를 열 때 현재 선택(열/행 전체)을 범위로 캡처하고, 그에 맞춰 placeholder 표시
+        self.search_model.capture_scope()
+        if self.search_model.scope_active:
+            self.edit_text_input.setPlaceholderText("Search in selected (Enter)")
+        else:
+            self.edit_text_input.setPlaceholderText("Search whole table (Enter)")
         self.edit_text_input.clear()
         self.label_idx_count.clear()
         self.button_backward.setDisabled(True)

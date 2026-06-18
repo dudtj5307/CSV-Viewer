@@ -24,6 +24,36 @@ python csv_viewer.py "CSV\raw_250416_174444"
 실행파일명·폴더 경로 모두 공백이 들어갈 수 있으므로 따옴표 처리에 주의한다.
 이 함수를 여러 번 호출하면 서로 독립적인 뷰어 창이 여러 개 뜬다.
 
+### 실행파일 경로 — MSI 설치 시 환경변수 `CSV_VIEWER_HOME` 사용 (권장)
+
+MSI(`installer/`)로 설치하면 시스템 환경변수 **`CSV_VIEWER_HOME`** 에 설치 경로
+(`C:\Program Files\CSV Viewer`)가 등록된다. 실행파일을 하드코딩하지 말고 이 변수로 경로를
+만들면, 나중에 설치 위치가 바뀌어도 외부 SW 코드를 고칠 필요가 없다.
+
+- 실행파일 경로 : **`%CSV_VIEWER_HOME%\CSV Viewer.exe`**
+- 배치/명령 예 : `"%CSV_VIEWER_HOME%\CSV Viewer.exe" "D:\data\csv_folder"`
+
+```cpp
+// CSV_VIEWER_HOME 환경변수로부터 "CSV Viewer.exe" 의 전체 경로를 만든다.
+// 반환값 : 성공 TRUE / 변수 없음(= MSI 미설치) FALSE
+BOOL GetCsvViewerExePath(CString& strExePath)
+{
+    TCHAR szHome[MAX_PATH] = { 0 };
+    DWORD n = GetEnvironmentVariable(_T("CSV_VIEWER_HOME"), szHome, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH)
+        return FALSE;   // 변수 없음 → 미설치. 안내하거나 직접 경로로 fallback.
+
+    strExePath = szHome;                    // 예: C:\Program Files\CSV Viewer
+    if (strExePath.Right(1) != _T("\\"))
+        strExePath += _T("\\");
+    strExePath += _T("CSV Viewer.exe");
+    return TRUE;
+}
+```
+
+> ⚠ 환경변수는 **프로세스가 시작될 때** 읽힌다. MSI 설치 직후, 이미 떠 있던 프로그램은 변경을
+> 못 받을 수 있으니 **설치 후 새로 시작된 프로세스**에서 호출해야 한다(상주/서비스면 재시작).
+
 ### 방법 A — ShellExecute (간단, 권장)
 
 ```cpp
@@ -31,7 +61,8 @@ python csv_viewer.py "CSV\raw_250416_174444"
 #pragma comment(lib, "shell32.lib")
 
 // CSV Viewer 실행파일에 CSV 폴더 경로를 인자로 넘겨 독립 프로세스로 띄운다.
-//   szExePath   : "CSV Viewer.exe" 의 전체 경로 (예: L"C:\\App\\CSV Viewer\\CSV Viewer.exe")
+//   szExePath   : "CSV Viewer.exe" 의 전체 경로 (보통 GetCsvViewerExePath 로 CSV_VIEWER_HOME 에서 얻음.
+//                 예: L"C:\\Program Files\\CSV Viewer\\CSV Viewer.exe")
 //   szCsvFolder : 열고 싶은 CSV 폴더 경로     (예: L"D:\\data\\csv_folder")
 // 반환값 : 성공하면 TRUE
 BOOL LaunchCsvViewer(LPCTSTR szExePath, LPCTSTR szCsvFolder)
@@ -94,7 +125,15 @@ BOOL LaunchCsvViewer(LPCTSTR szExePath, LPCTSTR szCsvFolder)
 ### 호출 예시
 
 ```cpp
-LaunchCsvViewer(_T("C:\\App\\CSV Viewer\\CSV Viewer.exe"),
+// MSI 설치 환경: CSV_VIEWER_HOME 으로 실행파일 경로를 얻어 호출 (권장)
+CString strExe;
+if (GetCsvViewerExePath(strExe))
+    LaunchCsvViewer(strExe, _T("D:\\data\\csv_folder"));
+else
+    AfxMessageBox(_T("CSV Viewer 가 설치되어 있지 않습니다. (CSV_VIEWER_HOME 없음)"));
+
+// 경로를 직접 아는 경우(개발/디버그 등):
+LaunchCsvViewer(_T("C:\\Program Files\\CSV Viewer\\CSV Viewer.exe"),
                 _T("D:\\data\\csv_folder"));
 ```
 

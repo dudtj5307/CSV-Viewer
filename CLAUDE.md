@@ -85,8 +85,12 @@ csv_viewer.py main()
 | `FilterWidget` | gui_filter.py | 체크박스 기반 필터 UI |
 | `CSVTableModel` | viewer/table_model.py | QAbstractTableModel. rows + highlight_cells |
 | `CSVFilterProxyModel` | viewer/filter_model.py | 열별 필터 프록시. column_filters, 헤더 `⏷` 표시 |
-| `SearchModel` | viewer/search_model.py | Ctrl+F 검색 + 하이라이트 |
+| `SearchModel` | viewer/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
 | `CSVLoaderThread` | viewer/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠) |
+
+> **⚠ 선택 영역 검색(scoped search)**: Ctrl+F 검색은 **검색바를 열 때의 선택 상태**로 범위가 정해진다(`SearchModel.capture_scope`, `gui_viewer.search_gui_init`에서 호출). **열/행 '전체 선택'만** 범위로 인정하고, 셀 클릭·셀범위 드래그는 **전체검색**이 된다. 범위는 검색바가 닫힐 때까지 유지(sticky)되며 닫으면 `reset_scope`로 해제된다(검색어를 바꿔 재검색해도 범위 유지). 규칙: **헤더(행 -1)는 전체검색일 때만 포함**(범위검색 시 제외) · 열+행 동시 선택은 **합집합**(선택 열 OR 선택 행). placeholder는 범위검색이면 `"Search selected area"`, 전체면 `"Find Text (Enter)"`. ⚠ 범위는 *열 때* 캡처되므로 **열/행을 먼저 선택한 뒤 Ctrl+F** 해야 한다(검색바를 먼저 연 뒤 선택하면 범위 안 잡힘 → 다시 열어야 함).
+>
+> **⚠ 함정 — `selectedColumns()`/`selectedRows()`는 대용량에서 수 초 걸린다**: `capture_scope`는 의도적으로 `QItemSelectionModel.selectedColumns()/selectedRows()`를 **쓰지 않는다**. 열 전체 선택(18만 행을 덮는 범위)에서 이 두 API는 내부적으로 전 행을 순회한다 — 측정값으로 `selectedColumns()`≈0.8s, `selectedRows()`≈1~2.8s라 **Ctrl+F가 2~3초 얼어붙었다**. 대신 `selectionModel().selection()`의 **range(QItemSelectionRange) 목록만** 보고 구간 커버리지(`_spans_cover`)로 '열/행 전체 선택'을 직접 판정한다(범위 수는 항상 소수 → 0.1ms 이하, 1000배+). 혼합 선택 시 Qt가 범위를 쪼개도(예: `[(0,1,0,0),(3,N,0,0),(2,2,0,5)]`) 구간 합집합으로 정확히 잡는다. → **선택 기반 판정은 selectedColumns/Rows 대신 range 직접 분석으로.** (같은 함정이 `gui_viewer.copy_selection`의 `selectedColumns()/selectedRows()`에도 남아 있음 — 전 열/행 복사 시 동일 지연.)
 
 > **⚠ 함정 — 대용량 데이터 cross-thread 시그널은 `object`로 넘긴다**: `CSVLoaderThread.load_complete`를 `pyqtSignal(str, list)`로 선언하면, 워커→GUI 큐드 연결에서 PyQt가 중첩 리스트를 **QVariantList로 변환·복사**한다. 이 비용이 워커 `emit`과 **수신 GUI 스레드의 역변환(슬롯 호출 *전*에 GUI 스레드에서 수행)** 양쪽에서 발생해 18만 행 기준 **수 초간 GUI가 얼어붙는다**(읽는 동안 다른 CSV 클릭이 안 먹히던 원인. 프록시 부착(≈80ms)은 무관했음). `pyqtSignal(str, object)`(PyQt_PyObject)는 파이썬 객체를 **참조로** 넘겨 변환·복사가 0이다. 단 참조 전달이라 **emit 후 워커에서 그 데이터를 수정하면 안 된다**(현재는 emit 직후 `return`이라 안전). → 큰 데이터를 스레드 시그널로 넘길 땐 `list`/`dict` 대신 `object`.
 
