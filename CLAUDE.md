@@ -139,7 +139,9 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 - 폴더 / 폴더 빈 공간(배경) 우클릭 → "Open with CSV Viewer(V)" (실행: `"…\CSV Viewer.exe" "%V"`)
 - **재실행 = 제거(토글)**: 이미 설치된 상태에서 같은 MSI를 다시 실행하면 설치가 아니라 **제거**로 동작. `Installed` 일 때 `SetProperty REMOVE=ALL` 을 `CostFinalize` 전(seq 999)에 세팅. 진짜 `/x` 제거·업그레이드 중 구버전 제거와는 조건(`NOT REMOVE`, `NOT UPGRADINGPRODUCTCODE`)으로 구분.
 - **⚠ WiX 버전 v5 고정**: v6/v7은 OSMF(상용 유지비) EULA 게이트가 빌드를 막는다. `installer/CSVViewer.wxs`는 v4 네임스페이스라 v5에서 그대로 빌드된다. (`build_msi.ps1`이 `--version 5.0.2`로 설치)
-- **⚠ 버전 올릴 때**: `CSVViewer.wxs`의 `Version`만 올리면 `MajorUpgrade`가 구버전 자동 제거 후 설치. `UpgradeCode`는 **절대 변경 금지**(바꾸면 구버전과 별개 제품이 되어 중복 설치됨).
+- **완료 팝업**: 설치/제거 끝에 VBScript MessageBox(`popup_install.vbs`/`popup_uninstall.vbs`)를 `InstallUISequence`의 `ExecuteAction` 직후 띄움. `/qn` 무인설치에선 안 뜸. (WiX v5는 인라인 스크립트 불가 → 외부 `.vbs`를 `ScriptSourceFile`로 참조, 한글 위해 UTF-8 BOM 필수)
+- **⚠ ProductCode·UpgradeCode 둘 다 고정·변경 금지**: `ProductCode`를 고정 GUID로 박았다. 자동 생성되게 두면 매 빌드 ProductCode가 바뀌어, 다시 빌드한 MSI를 Windows가 '다른 제품'으로 보고 **재실행=제거 토글이 깨진다**(설치된 것과 ProductCode가 달라 자기 자신을 인식 못 함 — 실제로 이 버그를 겪음). `AllowSameVersionUpgrades=yes`라 옛 빌드(다른 ProductCode)가 깔려 있어도 새로 설치하면 자동 제거된다.
+- **⚠ 버전 올리기**: 고정 ProductCode라 버전만 올려 '제자리 업그레이드'는 불가(같은 ProductCode+다른 버전 = 설치 에러). 토글로 제거→재설치가 기본. 정식 업그레이드가 꼭 필요하면 그때 ProductCode를 새 GUID로 발급(그 시점부터 이전 빌드와 토글 호환은 끊김).
 - **⚠ `build_msi.ps1` 편집 시**: 한글 주석 포함 → UTF-8 **BOM 유지 필수**(없으면 PowerShell 5.1이 cp949로 오독해 파싱 실패).
 
 ---

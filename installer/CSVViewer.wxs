@@ -18,12 +18,18 @@
       Name="CSV Viewer"
       Manufacturer="yslee"
       Version="1.0.0.0"
+      ProductCode="{5C69FF31-237D-497D-B120-1A80F32267EF}"
       UpgradeCode="BB893716-5CA4-4B5F-8C68-437174BD6795"
       Scope="perMachine"
       Compressed="yes">
 
-    <!-- 같은 UpgradeCode의 구버전을 자동 제거 후 설치 (버전 올렸을 때 업그레이드 경로) -->
-    <MajorUpgrade DowngradeErrorMessage="이미 더 최신 버전의 [ProductName] 이(가) 설치되어 있습니다." />
+    <!-- ★ ProductCode 고정(위 Package/@ProductCode): 매 빌드마다 ProductCode가 새로 생기면
+         "재실행=제거" 토글이 깨진다(다시 빌드한 MSI를 Windows가 '다른 제품'으로 봐서 자기 설치를
+         인식 못 함). 고정하면 어떤 빌드든 같은 제품 → 토글/제거가 일관되게 동작.
+         AllowSameVersionUpgrades=yes: 옛 빌드(다른 ProductCode)가 깔려 있어도 설치 시 자동 제거.
+         단, 고정 ProductCode라 '버전 올려 제자리 업그레이드'는 불가(토글로 제거→설치). -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="이미 더 최신 버전의 [ProductName] 이(가) 설치되어 있습니다." />
 
     <!-- ★ 토글 제거: 이미 설치된 상태에서 이 MSI를 '다시' 실행하면 → 설치가 아니라 '제거'로 동작.
          - Installed                : 이 제품(같은 ProductCode)이 이미 설치돼 있음 = 다시 실행한 경우
@@ -99,5 +105,23 @@
       </Component>
 
     </ComponentGroup>
+
+    <!-- ★ 완료 안내 팝업: 설치/제거가 끝나면 메시지 박스를 띄운다.
+         InstallUISequence(사용자 컨텍스트, UI 가 있을 때만)에서 ExecuteAction 직후 실행
+         → /qn 무인 설치에서는 뜨지 않는다. Return=ignore 라 팝업이 실패해도 설치엔 영향 없음. -->
+    <CustomAction Id="ShowInstallDone" Script="vbscript"
+                  ScriptSourceFile="$(sys.SOURCEFILEDIR)popup_install.vbs"
+                  Execute="immediate" Return="ignore" />
+    <CustomAction Id="ShowUninstallDone" Script="vbscript"
+                  ScriptSourceFile="$(sys.SOURCEFILEDIR)popup_uninstall.vbs"
+                  Execute="immediate" Return="ignore" />
+
+    <InstallUISequence>
+      <!-- 신규 설치 완료(제거가 아닐 때) -->
+      <Custom Action="ShowInstallDone" After="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
+      <!-- 제거 완료(토글 재실행 제거 또는 /x 제거) -->
+      <Custom Action="ShowUninstallDone" After="ExecuteAction" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallUISequence>
+
   </Package>
 </Wix>
