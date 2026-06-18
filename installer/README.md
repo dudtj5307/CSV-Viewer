@@ -21,10 +21,10 @@
 
 ```powershell
 # (A) 앱은 이미 빌드돼 있고(dist\CSV Viewer) MSI만 만들 때
-.\installer\build_msi.ps1
+powershell -ExecutionPolicy Bypass -File ".\installer\build_msi.ps1"
 
 # (B) 앱부터 다시 빌드(PyInstaller) 후 MSI 까지
-.\installer\build_msi.ps1 -Rebuild
+powershell -ExecutionPolicy Bypass -File ".\installer\build_msi.ps1" -Rebuild
 ```
 
 결과물: **`installer\out\CSV Viewer Setup.msi`**
