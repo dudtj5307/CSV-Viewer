@@ -564,7 +564,13 @@ QPushButton:disabled {
 }</string>
         </property>
         <property name="text">
-         <string>☰🡫Δ</string>
+         <string/>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>27</width>
+          <height>16</height>
+         </size>
         </property>
        </widget>
        <widget class="QPlainTextEdit" name="plainTextEdit_2">

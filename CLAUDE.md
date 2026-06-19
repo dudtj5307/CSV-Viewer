@@ -41,12 +41,11 @@ Project_CSV_Viewer/
 │       ├── dialog_viewer.py   # Ui_ViewerWindow
 │       ├── dialog_filter.py   # Ui_FilterForm
 │       └── widget_esc.py      # Ui_WidgetESC (ESC 안내 위젯)
-├── utils/
-│   └── viewer/
-│       ├── table_model.py     # CSVTableModel (QAbstractTableModel)
-│       ├── filter_model.py    # CSVFilterProxyModel (열 필터 프록시)
-│       ├── search_model.py    # SearchModel (Ctrl+F 검색 로직)
-│       └── csv_loader.py      # CSVLoaderThread (비동기 CSV 로딩)
+├── utils/                     # ⚠ viewer/ 하위가 아니라 utils/ 바로 아래에 있음
+│   ├── table_model.py         # CSVTableModel (QAbstractTableModel)
+│   ├── filter_model.py        # CSVFilterProxyModel (열 필터 프록시 + Δ 가상 열)
+│   ├── search_model.py        # SearchModel (Ctrl+F 검색 로직)
+│   └── csv_loader.py          # CSVLoaderThread (비동기 CSV 로딩)
 └── CSV/                       # 열람 대상 CSV 폴더들 (샘플/테스트 데이터)
 ```
 
@@ -83,14 +82,14 @@ csv_viewer.py main()
 | `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder=None)`** (None=빈 상태) |
 | `FilterHeaderView` | gui_filter.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 |
 | `FilterWidget` | gui_filter.py | 체크박스 기반 필터 UI |
-| `CSVTableModel` | viewer/table_model.py | QAbstractTableModel. rows + highlight_cells |
-| `CSVFilterProxyModel` | viewer/filter_model.py | 열별 필터 프록시. column_filters, 헤더 `⏷` 표시 |
-| `SearchModel` | viewer/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
-| `CSVLoaderThread` | viewer/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠) |
+| `CSVTableModel` | utils/table_model.py | QAbstractTableModel. rows + highlight_cells |
+| `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map) (아래 ⚠) |
+| `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
+| `CSVLoaderThread` | utils/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠) |
 
 > **⚠ 선택 영역 검색(scoped search)**: Ctrl+F 검색은 **검색바를 열 때의 선택 상태**로 범위가 정해진다(`SearchModel.capture_scope`, `gui_viewer.search_gui_init`에서 호출). **열/행 '전체 선택'만** 범위로 인정하고, 셀 클릭·셀범위 드래그는 **전체검색**이 된다. 범위는 검색바가 닫힐 때까지 유지(sticky)되며 닫으면 `reset_scope`로 해제된다(검색어를 바꿔 재검색해도 범위 유지). 규칙: **헤더(행 -1)는 전체검색일 때만 포함**(범위검색 시 제외) · 열+행 동시 선택은 **합집합**(선택 열 OR 선택 행). placeholder는 범위검색이면 `"Search selected area"`, 전체면 `"Find Text (Enter)"`. ⚠ 범위는 *열 때* 캡처되므로 **열/행을 먼저 선택한 뒤 Ctrl+F** 해야 한다(검색바를 먼저 연 뒤 선택하면 범위 안 잡힘 → 다시 열어야 함).
 >
-> **⚠ 함정 — `selectedColumns()`/`selectedRows()`는 대용량에서 수 초 걸린다**: `capture_scope`는 의도적으로 `QItemSelectionModel.selectedColumns()/selectedRows()`를 **쓰지 않는다**. 열 전체 선택(18만 행을 덮는 범위)에서 이 두 API는 내부적으로 전 행을 순회한다 — 측정값으로 `selectedColumns()`≈0.8s, `selectedRows()`≈1~2.8s라 **Ctrl+F가 2~3초 얼어붙었다**. 대신 `selectionModel().selection()`의 **range(QItemSelectionRange) 목록만** 보고 구간 커버리지(`_spans_cover`)로 '열/행 전체 선택'을 직접 판정한다(범위 수는 항상 소수 → 0.1ms 이하, 1000배+). 혼합 선택 시 Qt가 범위를 쪼개도(예: `[(0,1,0,0),(3,N,0,0),(2,2,0,5)]`) 구간 합집합으로 정확히 잡는다. → **선택 기반 판정은 selectedColumns/Rows 대신 range 직접 분석으로.** (같은 함정이 `gui_viewer.copy_selection`의 `selectedColumns()/selectedRows()`에도 남아 있음 — 전 열/행 복사 시 동일 지연.)
+> **⚠ 함정 — `selectedColumns()`/`selectedRows()`는 대용량에서 수 초 걸린다**: `capture_scope`는 의도적으로 `QItemSelectionModel.selectedColumns()/selectedRows()`를 **쓰지 않는다**. 열 전체 선택(18만 행을 덮는 범위)에서 이 두 API는 내부적으로 전 행을 순회한다 — 측정값으로 `selectedColumns()`≈0.8s, `selectedRows()`≈1~2.8s라 **Ctrl+F가 2~3초 얼어붙었다**. 대신 `selectionModel().selection()`의 **range(QItemSelectionRange) 목록만** 보고 구간 커버리지(`_spans_cover`)로 '열/행 전체 선택'을 직접 판정한다(범위 수는 항상 소수 → 0.1ms 이하, 1000배+). 혼합 선택 시 Qt가 범위를 쪼개도(예: `[(0,1,0,0),(3,N,0,0),(2,2,0,5)]`) 구간 합집합으로 정확히 잡는다. → **선택 기반 판정은 selectedColumns/Rows 대신 range 직접 분석으로.** (`gui_viewer.copy_selection`도 같은 방식으로 고쳤다 — 아래 변경 이력 참고.)
 
 > **⚠ 함정 — 대용량 데이터 cross-thread 시그널은 `object`로 넘긴다**: `CSVLoaderThread.load_complete`를 `pyqtSignal(str, list)`로 선언하면, 워커→GUI 큐드 연결에서 PyQt가 중첩 리스트를 **QVariantList로 변환·복사**한다. 이 비용이 워커 `emit`과 **수신 GUI 스레드의 역변환(슬롯 호출 *전*에 GUI 스레드에서 수행)** 양쪽에서 발생해 18만 행 기준 **수 초간 GUI가 얼어붙는다**(읽는 동안 다른 CSV 클릭이 안 먹히던 원인. 프록시 부착(≈80ms)은 무관했음). `pyqtSignal(str, object)`(PyQt_PyObject)는 파이썬 객체를 **참조로** 넘겨 변환·복사가 0이다. 단 참조 전달이라 **emit 후 워커에서 그 데이터를 수정하면 안 된다**(현재는 emit 직후 `return`이라 안전). → 큰 데이터를 스레드 시그널로 넘길 땐 `list`/`dict` 대신 `object`.
 
@@ -160,6 +159,17 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 ---
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
+
+- **복사(`copy_selection`) 대용량 성능**: 전 열/행 복사가 18만 행에서 수 초 멈추던 문제 해결(`selectedColumns()`/`selectedRows()`≈3.6s + `selectedIndexes()` 18만 개 생성 + 셀별 `data()` 호출이 원인). 이제 `selectionModel().selection()`의 **range만** 보고(헤더행/행번호열 포함 여부는 `_spans_cover` 구간 커버리지로), 셀 값은 **소스 `rows` + Δ 스냅샷을 직접** 읽는다(프록시 `accepted_rows()`로 proxy→source 행 벌크 매핑, `source_columns()`로 열 변환, Δ 열은 `delta_snapshot()`). 분리/희소 선택은 열별 병합 구간 + `bisect`로 (row,col) 선택 판정. **측정: 10만 행 열 복사 ≈ 0.04s.** (검색의 `capture_scope`와 동일 철학.)
+
+- **Δ(행간 차이) 가상 열**: 열 헤더 우클릭 필터창의 `☰🡫Δ` 버튼(`button_row_delta`, .ui에 이미 존재) → 그 열 바로 오른쪽에 `Δ [원본헤더]` 가상 열 추가. 각 행 = (그 행 값)−(윗행 값), 첫 행 `R(n)-R(n-1)`, 비숫자 `—`. 흐름: `gui_filter.contextMenuEvent`(클릭 열→`source_column_of`로 소스 열 변환) → `filter_model.add_delta_column/remove_delta_column`.
+  - ⚠ **스냅샷(고정)**: `add_delta_column` 시점의 *보이는 행 순서*로 1회 계산해 `_delta_snap[base]={source_row:문자열}`에 저장(`_snapshot`). 이후 필터가 바뀌어도 **재계산 안 함** → 스냅샷 때 숨겨졌던 행은 키가 없어 필터를 풀어도 빈칸, 계산됐던 행은 값 유지. (동적 재계산 아님 — 사용자 합의.) 포맷은 `_format_delta` **한 곳**(추후 '동일/변경' 텍스트로 교체 시 여기만).
+  - ⚠ **열 간접화(col_map)**: 프록시가 가정하던 '프록시 열==소스 열'을 깼다. `_col_kind/_col_src/_src_to_pcol`로 프록시↔소스 열 매핑. **`column_filters`·`setFilterForColumn`·`column_values_excluding_self`·`source_rows_with_value`는 전부 소스 열 키**(이미 `row[col]` 인덱싱). 헤더뷰가 클릭 열을 `source_column_of`로 1회 변환해 넘긴다. Δ 열은 `mapToSource` 무효.
+  - ⚠ **성능**: 추가 = `beginInsertColumns` 1회 + col_map(열 수만큼) 재구성. 뷰는 보이는 셀만 다시 그려 행 수와 무관하게 즉시. 원본 모델에 실제 열 삽입은 금지(18만 행 `row.insert` 프리즈 + 필터/하이라이트 키 재색인 + 커스텀 프록시가 columnsInserted 자동전달 안 함).
+  - ⚠ **Δ 열에서 깨지던 곳 동반 수정**: `search_model.search`는 소스 행을 `row[proxy_col]`로 직접 읽어 Δ 열에서 IndexError → `proxy.source_columns()`로 변환·Δ 열 스킵(검색 제외). `copy_selection` 헤더는 `model.column_label(c)`(⧩ 없음, Δ[..] 포함). `_apply_highlight`는 무효(Δ) 소스 인덱스 스킵.
+  - ⚠ 버튼 상태(우클릭 열 따라): 일반 열=추가 / 이미 Δ 보유한 원본 열=비활성 / Δ 열=삭제. 추가는 원본 열에서 1회, 제거는 Δ 열에서. 버튼은 **텍스트 대신 아이콘**(`GUI/res/button_row_delta.png`=추가, `button_row_delta_delete.png`=삭제)을 `setIcon`으로 표시 — popup이 매번 새 인스턴스라 `contextMenuEvent`에서 그때 `setText("")`+`setIcon`(+연결)을 설정. 아이콘 경로는 `self.parent.icon_path`(ViewerWindow 주입).
+  - ⚠ **Δ 셀 italic**: `data()`가 Δ 열 `FontRole`에 `_italic_font`(italic) 반환. (헤더는 `QHeaderView::section` stylesheet가 FontRole을 가로채 italic 미적용 — 셀만.)
+  - ⚠ **Δ 열 필터는 원본 값이 아니라 Δ값(스냅샷) 기준**: 별도 `delta_filters`(base 열 키, `column_filters`와 분리) + `_rebuild`가 `_delta_snap` 조회로 AND 판정. API: `delta_values_excluding_self`(캐스케이딩 후보값)·`setDeltaFilterForColumn`·`has_delta_filter`·`source_rows_with_delta_value`(Δ값 색칠). 헤더뷰는 `is_delta`로 apply/clear/paint/값목록 경로를 분기. Δ값 필터 걸리면 Δ 헤더에도 `⧩`. `_row_passes(i, exclude_src, exclude_delta)`는 인덱스 기반(두 필터 모두). Δ 열 삭제 시 그 Δ필터도 해제(숨기던 행 복원 위해 reset).
 
 - **필터창 값별 행 색칠**: 열 헤더 우클릭 필터창의 각 값 항목 우측 색버튼 → 그 값을 가진 모든 행을 색칠. 흐름: `gui_filter._FilterItemRow`/`FilterWidget.color_picked` → `FilterHeaderView.paint_value` → `filter_model.source_rows_with_value`(선택 시점 lazy 1회 O(N) 스캔) → `table_model.highlight_rows`.
   - ⚠ 색칠은 별도 row-color 레이어 없이 **기존 `highlight_cells`(셀 단위)에 직접 기록**(수동 셀 색칠과 동일 저장소). 이후 일부 셀만 다른 색으로 덮어쓰기가 자연스러움(우선순위 충돌 회피). 대신 한 값이 수만 행이면 셀 수만큼 메모리 증가. `highlight_rows`는 셀별 `QModelIndex` 생성 없이 좌표로 기록 후 bounding box 한 번만 `dataChanged`.

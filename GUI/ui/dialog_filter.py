@@ -267,6 +267,11 @@ class Ui_FilterForm(object):
 "QPushButton:disabled {\n"
 "    color: rgb(200,200,200);\n"
 "}")
+        self.button_row_delta.setText("")
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap("../res/button_row_delta.png"), QtGui.QIcon.Mode.Normal, QtGui.QIcon.State.On)
+        self.button_row_delta.setIcon(icon)
+        self.button_row_delta.setIconSize(QtCore.QSize(27, 16))
         self.button_row_delta.setObjectName("button_row_delta")
         self.plainTextEdit_2 = QtWidgets.QPlainTextEdit(parent=self.frame)
         self.plainTextEdit_2.setGeometry(QtCore.QRect(3, 3, 41, 22))
@@ -365,5 +370,4 @@ class Ui_FilterForm(object):
         self.button_apply.setText(_translate("FilterForm", "Apply"))
         self.button_close.setText(_translate("FilterForm", "Close"))
         self.button_clear.setText(_translate("FilterForm", "Clear Filter"))
-        self.button_row_delta.setText(_translate("FilterForm", "☰🡫Δ"))
         self.plainTextEdit_2.setPlainText(_translate("FilterForm", "Tools"))

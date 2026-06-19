@@ -102,6 +102,9 @@ class SearchModel(QObject):
         headers = getattr(source_model, "headers", [])
         rows = getattr(source_model, "rows", None)
         col_count = proxy.columnCount()
+        # 프록시 열 → 소스 열 (Δ 열은 -1). 아래에서 소스 행을 직접 읽으므로 열 변환이 필수
+        # (Δ 가상 열이 끼면 프록시 열 != 소스 열 → 변환 없이는 IndexError/열 어긋남).
+        src_cols = proxy.source_columns() if hasattr(proxy, "source_columns") else None
 
         scope_cols, scope_rows = self.scope_cols, self.scope_rows
         scope_active = scope_cols is not None or scope_rows is not None
@@ -109,7 +112,10 @@ class SearchModel(QObject):
         # Find in Column header (row == -1) - 전체검색일 때만 (범위 지정 시 헤더 제외)
         if not scope_active:
             for col in range(col_count):
-                header_text = headers[col] if col < len(headers) else ""
+                sc = src_cols[col] if src_cols is not None else col
+                if sc < 0:                  # Δ 열 헤더는 검색 제외(v1)
+                    continue
+                header_text = headers[sc] if sc < len(headers) else ""
                 if header_text and needle in str(header_text).lower():
                     self.matches.append((-1, col))
 
@@ -128,7 +134,10 @@ class SearchModel(QObject):
                 for col in range(col_count):
                     if scope_active and not (row_selected or (scope_cols is not None and col in scope_cols)):
                         continue
-                    if needle in row_data[col].lower():
+                    sc = src_cols[col] if src_cols is not None else col
+                    if sc < 0:              # Δ 열은 소스 데이터가 없음 → 검색 제외(v1)
+                        continue
+                    if needle in row_data[sc].lower():
                         self.matches.append((proxy_row, col))
 
         # 전체 탐색 후, 결과가 있으면 첫번째 결과 선택

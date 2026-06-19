@@ -1,5 +1,6 @@
 import os
 import time
+from bisect import bisect_right
 
 from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect
 from PyQt6.QtGui import QIcon, QBrush, QColor, QMovie
@@ -143,7 +144,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         proxy_model = entry['table_model'] if entry else None
         if not proxy_model:
             return
-        source_indexes = [proxy_model.mapToSource(pi) for pi in self.table_csv.selectedIndexes()]
+        # Δ(가상) 셀은 소스에 대응이 없어 mapToSource가 무효 인덱스 → 색칠 대상에서 제외
+        source_indexes = [si for si in (proxy_model.mapToSource(pi)
+                                        for pi in self.table_csv.selectedIndexes()) if si.isValid()]
         proxy_model.sourceModel().highlight_cell(color, source_indexes)
         self.table_csv.clearSelection()
 
@@ -593,30 +596,108 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         sel = table.selectionModel()
         if model is None or sel is None:
             return
-        indexes = table.selectedIndexes()
-        if not indexes:
+
+        # ⚠ 대용량(18만 행) 함정 회피: selectedIndexes()/selectedColumns()/selectedRows()는
+        #   내부적으로 전 행을 순회해 수 초 걸린다(전 열/행 복사 시 멈춘 듯 보임). 선택 '범위'
+        #   (QItemSelectionRange)는 항상 소수이므로 범위만 보고, 셀 값은 소스 rows / Δ 스냅샷을
+        #   '직접' 읽어 per-cell data() 호출(18만+ 회)도 피한다.
+        ranges = [(r.top(), r.bottom(), r.left(), r.right()) for r in sel.selection()]
+        if not ranges:
             return
+        row_count, col_count = model.rowCount(), model.columnCount()
 
-        rows = sorted({i.row() for i in indexes})
-        cols = sorted({i.column() for i in indexes})
-        cells = {(i.row(), i.column()): str(i.data() or '') for i in indexes}
+        cols = sorted({c for (_t, _b, l, r) in ranges for c in range(l, r + 1)})
 
-        full_cols = bool(sel.selectedColumns())   # 열 전체 선택 → 맨 위에 열 이름 포함
-        full_rows = bool(sel.selectedRows())      # 행 전체 선택 → 맨 앞에 행 번호 포함
-        source = model.sourceModel() or model     # 열 이름은 '*' 없는 원본 헤더에서
+        # 헤더행 포함(열 전체 선택) / 행번호열 포함(행 전체 선택) 여부 - 느린 selected*() 대신 구간 커버리지
+        full_cols = any(self._spans_cover([(t, b) for (t, b, l, r) in ranges if l <= c <= r], row_count)
+                        for c in cols)
+        full_rows = False
+        bounds = sorted({x for (t, b, _l, _r) in ranges for x in (t, b + 1)})
+        for i in range(len(bounds) - 1):
+            a, nxt = bounds[i], bounds[i + 1]
+            col_spans = [(l, r) for (t, b, l, r) in ranges if t <= a and b >= nxt - 1]
+            if col_spans and self._spans_cover(col_spans, col_count):
+                full_rows = True
+                break
+
+        # 열별 선택 행 구간(병합) → (row,col) 선택 여부를 bisect로 빠르게 (분리/희소 선택 대비)
+        col_span = {}
+        for c in cols:
+            merged = []
+            for t, b in sorted((t, b) for (t, b, l, r) in ranges if l <= c <= r):
+                if merged and t <= merged[-1][1] + 1:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+                else:
+                    merged.append((t, b))
+            col_span[c] = ([m[0] for m in merged], [m[1] for m in merged])
+
+        def is_sel(r, c):
+            starts, ends = col_span[c]
+            i = bisect_right(starts, r) - 1
+            return i >= 0 and r <= ends[i]
+
+        rows_set = set()
+        for (t, b, _l, _r) in ranges:
+            rows_set.update(range(t, b + 1))
+        rows = sorted(rows_set)
+
+        # 빠른 데이터 접근(프록시면): 소스 rows + Δ 스냅샷 직접
+        src_cols = model.source_columns() if hasattr(model, "source_columns") else None
+        accepted = model.accepted_rows() if hasattr(model, "accepted_rows") else None
+        source = model.sourceModel() or model
+        srows = getattr(source, "rows", None)
+        delta_snap = {}
+        if src_cols is not None and hasattr(model, "delta_snapshot"):
+            for c in cols:
+                if src_cols[c] < 0:                        # Δ 열
+                    delta_snap[c] = model.delta_snapshot(model.source_column_of(c))
+        fast = srows is not None and accepted is not None and src_cols is not None
+
         H, V, DISP = Qt.Orientation.Horizontal, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole
 
         lines = []
         if full_cols:
-            head = [''] if full_rows else []      # 둘 다면 좌상단 코너는 빈칸
-            head += [str(source.headerData(c, H, DISP) or '') for c in cols]
+            head = [''] if full_rows else []               # 둘 다면 좌상단 코너는 빈칸
+            # 헤더는 프록시 열→소스 열 매핑이 반영된 '⧩ 없는' 라벨(Δ 열은 Δ[원본헤더])로
+            if hasattr(model, "column_label"):
+                head += [str(model.column_label(c) or '') for c in cols]
+            else:
+                head += [str(source.headerData(c, H, DISP) or '') for c in cols]
             lines.append('\t'.join(head))
+
         for r in rows:
             line = [str(model.headerData(r, V, DISP) or '')] if full_rows else []
-            line += [cells.get((r, c), '') for c in cols]
+            if fast:
+                sr = accepted[r]
+                srow = srows[sr]
+                for c in cols:
+                    if not is_sel(r, c):
+                        line.append('')
+                    elif src_cols[c] < 0:                  # Δ 열 → 스냅샷 값
+                        line.append(delta_snap.get(c, {}).get(sr, ''))
+                    else:
+                        line.append(srow[src_cols[c]])
+            else:
+                for c in cols:
+                    line.append(str(model.index(r, c).data() or '') if is_sel(r, c) else '')
             lines.append('\t'.join(line))
 
         QApplication.clipboard().setText('\n'.join(lines))
+
+    @staticmethod
+    def _spans_cover(spans, total):
+        # 구간 [(lo,hi)]들이 [0, total-1]을 빈틈없이 덮는가 (search_model._spans_cover 와 동일 로직).
+        if total <= 0:
+            return False
+        nxt = 0
+        for lo, hi in sorted(spans):
+            if lo > nxt:
+                return False
+            if hi >= nxt:
+                nxt = hi + 1
+            if nxt >= total:
+                return True
+        return nxt >= total
 
     def search_gui_show(self):
         self.frame_search.setVisible(True)

@@ -1,10 +1,11 @@
+import os
 import sys
 from collections import defaultdict
 
 from PyQt6.QtWidgets import (QWidget, QCheckBox, QHeaderView, QApplication,
                              QPushButton, QHBoxLayout, QSizePolicy, QColorDialog)
 from PyQt6.QtCore import Qt, QEvent, QTimer, QSize, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QIcon
 
 from GUI.ui.dialog_filter import Ui_FilterForm
 
@@ -234,7 +235,9 @@ class FilterHeaderView(QHeaderView):
         self.parent = parent
         self.table_view = parent.table_csv
         self.setSectionsClickable(True)
-        self.current_col = None
+        self.current_col = None       # 우클릭한 프록시 열
+        self.source_col = None        # 그 열의 소스 열 (Δ 열이면 기준 열)
+        self.is_delta = False         # 우클릭한 열이 Δ 열인지 (필터/색칠 경로 분기)
         self.filter_popup = None
         self.setAutoFillBackground(True)
         self.setStyleSheet("QHeaderView::section { background-color: rgb(240, 240, 240); }")
@@ -255,8 +258,15 @@ class FilterHeaderView(QHeaderView):
         if source_model is None:
             return
 
-        # 캐스케이딩: 이 열을 제외한 나머지 필터를 통과한 행에서만 후보값 수집
-        unique_values = model.column_values_excluding_self(self.current_col)
+        # 클릭한 프록시 열을 소스 열로 변환 (Δ 열이면 그 기준 열). 이후 필터/색칠은 전부 소스 열 기준.
+        self.source_col = model.source_column_of(self.current_col)
+        self.is_delta = model.is_delta_column(self.current_col)
+
+        # 캐스케이딩 후보값: Δ 열이면 Δ값(스냅샷) 기준, 일반 열이면 원본 값 기준
+        if self.is_delta:
+            unique_values = model.delta_values_excluding_self(self.source_col)
+        else:
+            unique_values = model.column_values_excluding_self(self.source_col)
 
         # Pop up Filter UI as Dialog
         self.filter_popup = FilterWidget(unique_values, self.parent)
@@ -269,8 +279,31 @@ class FilterHeaderView(QHeaderView):
         # 값 항목의 색버튼 -> 그 값을 가진 모든 행 색칠 (팝업은 계속 열어둬 여러 값 연속 색칠 가능)
         self.filter_popup.color_picked.connect(self.paint_value)
 
-        # 이 열에 적용된 필터가 있을 때만 "Clear Filter" 활성화
-        self.filter_popup.button_clear.setEnabled(self.current_col in model.column_filters)
+        # ☰🡫Δ 버튼: 우클릭한 열 종류에 따라 추가/비활성/삭제로 구성 (popup은 매번 새 인스턴스 → stale 연결 없음)
+        #  - Δ 열                  → "X"(삭제). 누르면 그 Δ 열 제거
+        #  - 이미 Δ 보유한 원본 열  → 비활성(중복 추가 방지)
+        #  - 그 외 일반 열          → 기본(추가). 누르면 source_col 오른쪽에 Δ 열 추가
+        btn_delta = self.filter_popup.button_row_delta
+        btn_delta.setText("")                        # 텍스트(☰🡫Δ / X) 대신 아이콘 사용
+        icon_dir = self.parent.icon_path             # GUI/res (ViewerWindow가 주입)
+        add_icon = QIcon(os.path.join(icon_dir, "button_row_delta.png"))
+        if self.is_delta:
+            btn_delta.setIcon(QIcon(os.path.join(icon_dir, "button_row_delta_delete.png")))
+            btn_delta.setToolTip("Remove Δ column")
+            btn_delta.clicked.connect(self.remove_delta)
+        elif model.has_delta(self.source_col):
+            btn_delta.setIcon(add_icon)              # 비활성 → Qt가 자동으로 흐리게 렌더
+            btn_delta.setEnabled(False)
+        else:
+            btn_delta.setIcon(add_icon)
+            btn_delta.setToolTip("Add Δ column (difference from previous row)")
+            btn_delta.clicked.connect(self.add_delta)
+
+        # 이 열에 필터가 걸려 있을 때만 "Clear Filter" 활성화 (Δ 열이면 Δ값 필터 기준)
+        if self.is_delta:
+            self.filter_popup.button_clear.setEnabled(model.has_delta_filter(self.source_col))
+        else:
+            self.filter_popup.button_clear.setEnabled(self.source_col in model.column_filters)
 
         # Display popup by mouse click position
         popup_x = event.globalPos().x()  # Mouse click global x-coordinate
@@ -286,14 +319,17 @@ class FilterHeaderView(QHeaderView):
         shown     = {cb.text() for cb in self.filter_popup.checkboxes}
         unchecked = {cb.text() for cb in self.filter_popup.checkboxes if not cb.isChecked()}
 
-        # 캐스케이딩: 지금 드롭다운에 보이지 않던 기존 숨김값은 그대로 보존
-        old_hidden = proxy_model.column_filters.get(self.current_col, frozenset())
-        new_hidden = (old_hidden - shown) | unchecked
-
-        proxy_model.setFilterForColumn(self.current_col, new_hidden)
-
-        # Apply 직후 필터 유무에 맞춰 "Clear Filter" 활성화 즉시 갱신
-        self.filter_popup.button_clear.setEnabled(self.current_col in proxy_model.column_filters)
+        # 캐스케이딩: 지금 드롭다운에 보이지 않던 기존 숨김값은 그대로 보존. (Δ 열이면 Δ값 필터로)
+        if self.is_delta:
+            old_hidden = proxy_model.delta_filters.get(self.source_col, frozenset())
+            new_hidden = (old_hidden - shown) | unchecked
+            proxy_model.setDeltaFilterForColumn(self.source_col, new_hidden)
+            self.filter_popup.button_clear.setEnabled(proxy_model.has_delta_filter(self.source_col))
+        else:
+            old_hidden = proxy_model.column_filters.get(self.source_col, frozenset())
+            new_hidden = (old_hidden - shown) | unchecked
+            proxy_model.setFilterForColumn(self.source_col, new_hidden)
+            self.filter_popup.button_clear.setEnabled(self.source_col in proxy_model.column_filters)
 
         # 현재 상태를 새 기준선으로 -> 변동 없으니 Apply 비활성화
         self.filter_popup.mark_applied()
@@ -303,9 +339,12 @@ class FilterHeaderView(QHeaderView):
             self.parent.search_model.search(self.parent.edit_text_input.text())
 
     def clear_filter(self):
-        # 엑셀 "Clear Filter From [Column]" - 이 열 필터를 한 번에 완전 해제
+        # 엑셀 "Clear Filter From [Column]" - 이 열 필터를 한 번에 완전 해제 (Δ 열이면 Δ값 필터)
         proxy_model = self.table_view.model()
-        proxy_model.setFilterForColumn(self.current_col, [])   # 빈 입력 → pop → 완전 해제
+        if self.is_delta:
+            proxy_model.setDeltaFilterForColumn(self.source_col, [])
+        else:
+            proxy_model.setFilterForColumn(self.source_col, [])   # 빈 입력 → pop → 완전 해제
 
         self.filter_popup.close()   # 드롭다운 체크 상태가 stale → 닫기
 
@@ -314,7 +353,7 @@ class FilterHeaderView(QHeaderView):
             self.parent.search_model.search(self.parent.edit_text_input.text())
 
     def paint_value(self, value, color):
-        # 이 열(current_col)에서 value를 가진 모든 소스 행의 셀 전체를 color로 칠한다.
+        # 이 열에서 value를 가진 모든 소스 행의 셀 전체를 color로 칠한다 (Δ 열이면 Δ값 기준).
         # 행 목록은 색 선택 시점에 1회 스캔(lazy). 색칠은 소스 모델의 highlight_cells에 직접 기록.
         proxy_model = self.table_view.model()
         if proxy_model is None:
@@ -322,8 +361,34 @@ class FilterHeaderView(QHeaderView):
         source_model = proxy_model.sourceModel()
         if source_model is None:
             return
-        source_rows = proxy_model.source_rows_with_value(self.current_col, value)
+        if self.is_delta:
+            source_rows = proxy_model.source_rows_with_delta_value(self.source_col, value)
+        else:
+            source_rows = proxy_model.source_rows_with_value(self.source_col, value)
         source_model.highlight_rows(color, source_rows)
+
+    def add_delta(self):
+        # 일반 열의 ☰🡫Δ -> source_col 오른쪽에 Δ 열 추가(현재 보이는 행 기준 스냅샷)
+        proxy_model = self.table_view.model()
+        if proxy_model is None:
+            return
+        proxy_model.add_delta_column(self.source_col)
+        self.filter_popup.close()        # 결과(추가된 Δ 열)를 바로 보이도록 팝업 닫기
+        self._refresh_search_if_open()
+
+    def remove_delta(self):
+        # Δ 열의 "X" -> 그 Δ 열 제거 (source_col = 기준 열)
+        proxy_model = self.table_view.model()
+        if proxy_model is None:
+            return
+        proxy_model.remove_delta_column(self.source_col)
+        self.filter_popup.close()
+        self._refresh_search_if_open()
+
+    def _refresh_search_if_open(self):
+        # 열이 추가/삭제되면 검색 결과의 (행,열) 좌표가 어긋날 수 있어 재검색 (apply_filter와 동일 패턴)
+        if self.parent.frame_search.isVisible():
+            self.parent.search_model.search(self.parent.edit_text_input.text())
 
 
 if __name__ == "__main__":
