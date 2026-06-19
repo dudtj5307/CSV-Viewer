@@ -98,7 +98,7 @@ class FilterWidget(QWidget, Ui_FilterForm):
     def create_items(self, data_set):
         self.checkboxes = []
         # master_checkbox 바로 아래(= .ui의 trailing stretch 위)에 항목 행 삽입
-        insert_at = self.verticalLayout.indexOf(self.master_checkbox) + 1
+        insert_at = self.verticalLayout1_1.indexOf(self.master_checkbox) + 1
         for item, status in sorted(data_set.items(), key=lambda x: _filter_sort_key(x[0])):
             checkbox = QCheckBox()
             checkbox.setText(item)
@@ -122,7 +122,7 @@ class FilterWidget(QWidget, Ui_FilterForm):
             # 색버튼을 줄 오른쪽 끝 오버레이로 (텍스트는 그 아래로 깔림). 가시성 토글은 이 줄 기준.
             row = _FilterItemRow(checkbox, color_btn)
             checkbox._row = row
-            self.verticalLayout.insertWidget(insert_at, row)
+            self.verticalLayout1_1.insertWidget(insert_at, row)
             insert_at += 1
             self.checkboxes.append(checkbox)
 
@@ -135,10 +135,11 @@ class FilterWidget(QWidget, Ui_FilterForm):
         self.edit_filter_text.textChanged.connect(self.filter_items)
 
         # Update widget size based on its content
-        scrollbox_height = min(self.widget.sizeHint().height() + 20, 160)
+        scrollbox_height = min(self.widget.sizeHint().height() + 20, 174)
         self.scrollArea.setMinimumHeight(scrollbox_height)
 
-        self.setMaximumSize(QSize(400, 400))
+        self.setMinimumHeight(scrollbox_height+120)
+        self.setMaximumSize(QSize(1000, 400))
 
         # 초기 master/Apply 상태를 데이터 기준으로 정확히 설정
         self._refresh_master()

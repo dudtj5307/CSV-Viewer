@@ -13,53 +13,97 @@ class Ui_FilterForm(object):
     def setupUi(self, FilterForm):
         FilterForm.setObjectName("FilterForm")
         FilterForm.setWindowModality(QtCore.Qt.WindowModality.NonModal)
-        FilterForm.resize(177, 106)
+        FilterForm.resize(200, 171)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(FilterForm.sizePolicy().hasHeightForWidth())
         FilterForm.setSizePolicy(sizePolicy)
+        FilterForm.setMinimumSize(QtCore.QSize(200, 171))
         FilterForm.setMaximumSize(QtCore.QSize(600, 600))
         FilterForm.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
         FilterForm.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
         FilterForm.setStyleSheet("QWidget#FilterForm {\n"
 "    border: 1px solid rgb(158, 158, 158);\n"
 "}")
-        self.formLayout = QtWidgets.QFormLayout(FilterForm)
-        self.formLayout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinAndMaxSize)
-        self.formLayout.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        self.formLayout.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter|QtCore.Qt.AlignmentFlag.AlignTop)
-        self.formLayout.setContentsMargins(3, 3, 3, 3)
-        self.formLayout.setHorizontalSpacing(3)
-        self.formLayout.setVerticalSpacing(1)
-        self.formLayout.setObjectName("formLayout")
-        self.scrollArea = QtWidgets.QScrollArea(parent=FilterForm)
+        self.verticalLayout_2 = QtWidgets.QVBoxLayout(FilterForm)
+        self.verticalLayout_2.setContentsMargins(4, 4, 4, 4)
+        self.verticalLayout_2.setSpacing(2)
+        self.verticalLayout_2.setObjectName("verticalLayout_2")
+        self.verticalLayout1_3 = QtWidgets.QFrame(parent=FilterForm)
+        self.verticalLayout1_3.setObjectName("verticalLayout1_3")
+        self.verticalLayout1 = QtWidgets.QVBoxLayout(self.verticalLayout1_3)
+        self.verticalLayout1.setContentsMargins(3, 1, 3, 1)
+        self.verticalLayout1.setSpacing(2)
+        self.verticalLayout1.setObjectName("verticalLayout1")
+        self.verticalFrame = QtWidgets.QFrame(parent=self.verticalLayout1_3)
+        self.verticalFrame.setStyleSheet("QFrame#verticalFrame {\n"
+"    border: 1px solid rgb(200, 200, 200);\n"
+"}")
+        self.verticalFrame.setObjectName("verticalFrame")
+        self.verticalLayout = QtWidgets.QVBoxLayout(self.verticalFrame)
+        self.verticalLayout.setContentsMargins(4, 2, 4, 2)
+        self.verticalLayout.setSpacing(2)
+        self.verticalLayout.setObjectName("verticalLayout")
+        self.plainTextEdit = QtWidgets.QPlainTextEdit(parent=self.verticalFrame)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.plainTextEdit.sizePolicy().hasHeightForWidth())
+        self.plainTextEdit.setSizePolicy(sizePolicy)
+        self.plainTextEdit.setMinimumSize(QtCore.QSize(0, 23))
+        self.plainTextEdit.setMaximumSize(QtCore.QSize(16777215, 23))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        font.setItalic(False)
+        font.setUnderline(False)
+        font.setStrikeOut(False)
+        self.plainTextEdit.setFont(font)
+        self.plainTextEdit.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.plainTextEdit.setAcceptDrops(False)
+        self.plainTextEdit.setStyleSheet("QPlainTextEdit {\n"
+"    background-color: rgba(255, 255, 255, 0);\n"
+"    border: 0px;\n"
+"}")
+        self.plainTextEdit.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.plainTextEdit.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.plainTextEdit.setUndoRedoEnabled(False)
+        self.plainTextEdit.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit.setObjectName("plainTextEdit")
+        self.verticalLayout.addWidget(self.plainTextEdit)
+        self.edit_filter_text = QtWidgets.QLineEdit(parent=self.verticalFrame)
+        self.edit_filter_text.setStyleSheet("QLineEdit {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    padding-left: 1px;\n"
+"}")
+        self.edit_filter_text.setObjectName("edit_filter_text")
+        self.verticalLayout.addWidget(self.edit_filter_text)
+        self.scrollArea = QtWidgets.QScrollArea(parent=self.verticalFrame)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.scrollArea.sizePolicy().hasHeightForWidth())
         self.scrollArea.setSizePolicy(sizePolicy)
-        self.scrollArea.setMinimumSize(QtCore.QSize(0, 60))
+        self.scrollArea.setMinimumSize(QtCore.QSize(0, 39))
         self.scrollArea.setMaximumSize(QtCore.QSize(16777215, 16777215))
-        self.scrollArea.setStyleSheet("QScrollArea#scrollArea {\n"
-"    border: 1px solid rgb(158, 158, 158);\n"
-"    background-color: rgb(255, 255, 255);\n"
-"}")
+        self.scrollArea.setStyleSheet("")
         self.scrollArea.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setObjectName("scrollArea")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 169, 58))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 174, 37))
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.scrollAreaWidgetContents.sizePolicy().hasHeightForWidth())
         self.scrollAreaWidgetContents.setSizePolicy(sizePolicy)
+        self.scrollAreaWidgetContents.setStyleSheet("")
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.gridLayout_2 = QtWidgets.QGridLayout(self.scrollAreaWidgetContents)
-        self.gridLayout_2.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMinAndMaxSize)
-        self.gridLayout_2.setContentsMargins(1, 1, 1, 1)
-        self.gridLayout_2.setSpacing(1)
+        self.gridLayout_2.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetDefaultConstraint)
+        self.gridLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.gridLayout_2.setSpacing(0)
         self.gridLayout_2.setObjectName("gridLayout_2")
         self.widget = QtWidgets.QWidget(parent=self.scrollAreaWidgetContents)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
@@ -67,39 +111,34 @@ class Ui_FilterForm(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.widget.sizePolicy().hasHeightForWidth())
         self.widget.setSizePolicy(sizePolicy)
+        self.widget.setMinimumSize(QtCore.QSize(0, 0))
         self.widget.setObjectName("widget")
         self.gridLayout = QtWidgets.QGridLayout(self.widget)
+        self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetDefaultConstraint)
         self.gridLayout.setContentsMargins(1, 1, 1, 1)
         self.gridLayout.setSpacing(1)
         self.gridLayout.setObjectName("gridLayout")
-        self.verticalLayout = QtWidgets.QVBoxLayout()
-        self.verticalLayout.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMaximumSize)
-        self.verticalLayout.setContentsMargins(4, 2, 4, -1)
-        self.verticalLayout.setSpacing(1)
-        self.verticalLayout.setObjectName("verticalLayout")
-        self.edit_filter_text = QtWidgets.QLineEdit(parent=self.widget)
-        self.edit_filter_text.setStyleSheet("QLineEdit {\n"
-"    background-color: rgb(253, 253, 253);\n"
-"    padding-left: 1px;\n"
-"}")
-        self.edit_filter_text.setObjectName("edit_filter_text")
-        self.verticalLayout.addWidget(self.edit_filter_text)
+        self.verticalLayout1_1 = QtWidgets.QVBoxLayout()
+        self.verticalLayout1_1.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetMaximumSize)
+        self.verticalLayout1_1.setContentsMargins(4, 0, 4, 2)
+        self.verticalLayout1_1.setSpacing(2)
+        self.verticalLayout1_1.setObjectName("verticalLayout1_1")
         spacerItem = QtWidgets.QSpacerItem(20, 4, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed)
-        self.verticalLayout.addItem(spacerItem)
+        self.verticalLayout1_1.addItem(spacerItem)
         self.master_checkbox = QtWidgets.QCheckBox(parent=self.widget)
         self.master_checkbox.setChecked(True)
         self.master_checkbox.setObjectName("master_checkbox")
-        self.verticalLayout.addWidget(self.master_checkbox)
+        self.verticalLayout1_1.addWidget(self.master_checkbox)
         spacerItem1 = QtWidgets.QSpacerItem(20, 1, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
-        self.verticalLayout.addItem(spacerItem1)
-        self.gridLayout.addLayout(self.verticalLayout, 0, 0, 1, 1)
+        self.verticalLayout1_1.addItem(spacerItem1)
+        self.gridLayout.addLayout(self.verticalLayout1_1, 1, 0, 1, 1)
         self.gridLayout_2.addWidget(self.widget, 0, 0, 1, 1)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
-        self.formLayout.setWidget(0, QtWidgets.QFormLayout.ItemRole.SpanningRole, self.scrollArea)
+        self.verticalLayout.addWidget(self.scrollArea)
         self.horizontalLayout_ = QtWidgets.QHBoxLayout()
         self.horizontalLayout_.setSpacing(0)
         self.horizontalLayout_.setObjectName("horizontalLayout_")
-        self.button_apply = QtWidgets.QPushButton(parent=FilterForm)
+        self.button_apply = QtWidgets.QPushButton(parent=self.verticalFrame)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -126,7 +165,7 @@ class Ui_FilterForm(object):
 "}")
         self.button_apply.setObjectName("button_apply")
         self.horizontalLayout_.addWidget(self.button_apply)
-        self.button_close = QtWidgets.QPushButton(parent=FilterForm)
+        self.button_close = QtWidgets.QPushButton(parent=self.verticalFrame)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -153,8 +192,8 @@ class Ui_FilterForm(object):
 "}")
         self.button_close.setObjectName("button_close")
         self.horizontalLayout_.addWidget(self.button_close)
-        self.formLayout.setLayout(1, QtWidgets.QFormLayout.ItemRole.FieldRole, self.horizontalLayout_)
-        self.button_clear = QtWidgets.QPushButton(parent=FilterForm)
+        self.verticalLayout.addLayout(self.horizontalLayout_)
+        self.button_clear = QtWidgets.QPushButton(parent=self.verticalFrame)
         self.button_clear.setEnabled(False)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(0)
@@ -181,7 +220,139 @@ class Ui_FilterForm(object):
 "    color: rgb(200,200,200);\n"
 "}")
         self.button_clear.setObjectName("button_clear")
-        self.formLayout.setWidget(2, QtWidgets.QFormLayout.ItemRole.FieldRole, self.button_clear)
+        self.verticalLayout.addWidget(self.button_clear)
+        self.verticalLayout1.addWidget(self.verticalFrame)
+        self.verticalLayout_2.addWidget(self.verticalLayout1_3)
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.horizontalLayout.setContentsMargins(2, 1, 2, 1)
+        self.horizontalLayout.setSpacing(2)
+        self.horizontalLayout.setObjectName("horizontalLayout")
+        self.frame = QtWidgets.QFrame(parent=FilterForm)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.frame.sizePolicy().hasHeightForWidth())
+        self.frame.setSizePolicy(sizePolicy)
+        self.frame.setMinimumSize(QtCore.QSize(0, 31))
+        self.frame.setToolTip("")
+        self.frame.setStyleSheet("QFrame {\n"
+"    border: 1px solid rgb(200, 200, 200);\n"
+"}")
+        self.frame.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.frame.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        self.frame.setObjectName("frame")
+        self.button_row_delta = QtWidgets.QPushButton(parent=self.frame)
+        self.button_row_delta.setGeometry(QtCore.QRect(50, 5, 41, 21))
+        font = QtGui.QFont()
+        font.setFamily("Times New Roman")
+        font.setBold(False)
+        font.setItalic(False)
+        self.button_row_delta.setFont(font)
+        self.button_row_delta.setToolTip("")
+        self.button_row_delta.setStyleSheet("QPushButton {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    border-radius: 3px;\n"
+"    border: 1px solid rgb(120, 120, 120);\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_row_delta.setObjectName("button_row_delta")
+        self.plainTextEdit_2 = QtWidgets.QPlainTextEdit(parent=self.frame)
+        self.plainTextEdit_2.setGeometry(QtCore.QRect(3, 3, 41, 22))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.plainTextEdit_2.sizePolicy().hasHeightForWidth())
+        self.plainTextEdit_2.setSizePolicy(sizePolicy)
+        self.plainTextEdit_2.setMinimumSize(QtCore.QSize(0, 22))
+        self.plainTextEdit_2.setMaximumSize(QtCore.QSize(16777215, 22))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        font.setItalic(False)
+        self.plainTextEdit_2.setFont(font)
+        self.plainTextEdit_2.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self.plainTextEdit_2.setAcceptDrops(False)
+        self.plainTextEdit_2.setStyleSheet("QPlainTextEdit {\n"
+"    background-color: rgba(255, 255, 255, 0);\n"
+"    border: 0px;\n"
+"}")
+        self.plainTextEdit_2.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_2.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.plainTextEdit_2.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.plainTextEdit_2.setUndoRedoEnabled(False)
+        self.plainTextEdit_2.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit_2.setObjectName("plainTextEdit_2")
+        self.button_reserved1 = QtWidgets.QPushButton(parent=self.frame)
+        self.button_reserved1.setEnabled(False)
+        self.button_reserved1.setGeometry(QtCore.QRect(96, 5, 41, 21))
+        font = QtGui.QFont()
+        font.setFamily("Times New Roman")
+        font.setBold(False)
+        font.setItalic(False)
+        self.button_reserved1.setFont(font)
+        self.button_reserved1.setToolTip("")
+        self.button_reserved1.setStyleSheet("QPushButton {\n"
+"    background-color: rgb(200, 200, 200);\n"
+"    border-radius: 3px;\n"
+"    border: 1px solid rgb(120, 120, 120);\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_reserved1.setText("")
+        self.button_reserved1.setObjectName("button_reserved1")
+        self.button_reserved2 = QtWidgets.QPushButton(parent=self.frame)
+        self.button_reserved2.setEnabled(False)
+        self.button_reserved2.setGeometry(QtCore.QRect(142, 5, 41, 21))
+        font = QtGui.QFont()
+        font.setFamily("Times New Roman")
+        font.setBold(False)
+        font.setItalic(False)
+        self.button_reserved2.setFont(font)
+        self.button_reserved2.setToolTip("")
+        self.button_reserved2.setStyleSheet("QPushButton {\n"
+"    background-color: rgb(200, 200, 200);\n"
+"    border-radius: 3px;\n"
+"    border: 1px solid rgb(120, 120, 120);\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_reserved2.setText("")
+        self.button_reserved2.setObjectName("button_reserved2")
+        self.horizontalLayout.addWidget(self.frame)
+        self.verticalLayout_2.addLayout(self.horizontalLayout)
 
         self.retranslateUi(FilterForm)
         QtCore.QMetaObject.connectSlotsByName(FilterForm)
@@ -189,7 +360,10 @@ class Ui_FilterForm(object):
     def retranslateUi(self, FilterForm):
         _translate = QtCore.QCoreApplication.translate
         FilterForm.setWindowTitle(_translate("FilterForm", "Filter"))
+        self.plainTextEdit.setPlainText(_translate("FilterForm", "Display Filter"))
         self.master_checkbox.setText(_translate("FilterForm", "(Select All)"))
         self.button_apply.setText(_translate("FilterForm", "Apply"))
         self.button_close.setText(_translate("FilterForm", "Close"))
         self.button_clear.setText(_translate("FilterForm", "Clear Filter"))
+        self.button_row_delta.setText(_translate("FilterForm", "☰🡫Δ"))
+        self.plainTextEdit_2.setPlainText(_translate("FilterForm", "Tools"))
