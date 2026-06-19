@@ -68,3 +68,26 @@ class CSVTableModel(QAbstractTableModel):
         top_left = self.index(min(rows), min(cols))
         bottom_right = self.index(max(rows), max(cols))
         self.dataChanged.emit(top_left, bottom_right, [Qt.ItemDataRole.BackgroundRole])
+
+    def highlight_rows(self, color, source_rows):
+        # 값별 색칠: 주어진 소스 행들의 '모든 열' 셀을 highlight_cells에 직접 기록한다.
+        # 수동 셀 색칠(highlight_cell)과 같은 저장소를 쓰므로, 이후 그 행의 일부 셀만
+        # 다른 색으로 덮어쓰면 그 (row, col) 키만 갱신된다(우선순위 충돌·폴백 로직 없음).
+        # ⚠ 셀마다 QModelIndex를 만들면 그게 병목이라, (row, col) 좌표로 직접 기록하고
+        #   dataChanged는 셀 리스트 없이 bounding box 한 번만 emit한다(뷰는 보이는 셀만 다시 그림).
+        if not source_rows:
+            return
+        ncols = len(self.headers)
+        if ncols == 0:
+            return
+        if color is None:
+            for r in source_rows:
+                for c in range(ncols):
+                    self.highlight_cells.pop((r, c), None)
+        else:
+            for r in source_rows:
+                for c in range(ncols):
+                    self.highlight_cells[(r, c)] = color
+        top_left = self.index(min(source_rows), 0)
+        bottom_right = self.index(max(source_rows), ncols - 1)
+        self.dataChanged.emit(top_left, bottom_right, [Qt.ItemDataRole.BackgroundRole])

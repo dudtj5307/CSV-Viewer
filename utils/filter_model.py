@@ -189,3 +189,12 @@ class CSVFilterProxyModel(QAbstractProxyModel):
                 value = row[column]
                 values[value] = value not in hidden
         return values
+
+    # ---------- 값별 행 색칠(필터창 색버튼) ----------
+    def source_rows_with_value(self, column, value):
+        """column 값이 value와 같은 모든 소스 행 인덱스 목록 (값별 색칠용).
+        ⚠ 필터를 무시하고 전체 소스 행을 스캔한다(다른 열 필터로 가려진 행도 칠해
+          필터 해제 시 색이 일관되게 유지되도록). 색 선택 시점에만 도는 1회 O(N) 스캔."""
+        if self._src is None:
+            return []
+        return [i for i, row in enumerate(self._src.rows) if row[column] == value]

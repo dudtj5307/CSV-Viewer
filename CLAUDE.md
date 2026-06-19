@@ -156,3 +156,12 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
   - 원인: `QHeaderView::section { ... }` stylesheet가 QStyleSheetStyle로 렌더링을 가로채 native 볼드 처리가 안 됨
   - 해결: `paintSection` override로 직접 볼드 텍스트 그리기 (보류)
   - ⚠️ paintSection 직접 드로잉 오버레이는 `QWidget.grab()`에 캡처되지 않음(clip 비움) → 자동/스크린샷 검증 불가. 필터 열 표시(`⏷`)도 이 때문에 paintSection 대신 `headerData` 텍스트 마커로 구현함
+
+---
+
+## 변경 이력 (최신이 위, 한두 줄 요약)
+
+- **필터창 값별 행 색칠**: 열 헤더 우클릭 필터창의 각 값 항목 우측 색버튼 → 그 값을 가진 모든 행을 색칠. 흐름: `gui_filter._FilterItemRow`/`FilterWidget.color_picked` → `FilterHeaderView.paint_value` → `filter_model.source_rows_with_value`(선택 시점 lazy 1회 O(N) 스캔) → `table_model.highlight_rows`.
+  - ⚠ 색칠은 별도 row-color 레이어 없이 **기존 `highlight_cells`(셀 단위)에 직접 기록**(수동 셀 색칠과 동일 저장소). 이후 일부 셀만 다른 색으로 덮어쓰기가 자연스러움(우선순위 충돌 회피). 대신 한 값이 수만 행이면 셀 수만큼 메모리 증가. `highlight_rows`는 셀별 `QModelIndex` 생성 없이 좌표로 기록 후 bounding box 한 번만 `dataChanged`.
+  - ⚠ 색버튼은 `QHBoxLayout`에 넣지 않고 **줄 우측 오버레이**(`_FilterItemRow.resizeEvent`)로 띄우고 체크박스 폭은 `QSizePolicy.Ignored`. 안 그러면 긴 텍스트가 줄 폭을 늘려 버튼이 화면 밖으로 밀리고 가로 스크롤이 생긴다(텍스트는 버튼 아래로 깔림).
+  - ⚠ `QColorDialog` 띄우는 동안 팝업 자동닫힘 방지: `FilterWidget._dialog_open` 가드로 eventFilter의 '바깥 클릭=닫힘'을 막음. 닫힌 뒤 `activateWindow()/raise_()/setFocus()`로 팝업 포커스 복원(안 하면 비활성 팔레트라 체크박스가 전부 해제된 듯 회색으로 보임).
