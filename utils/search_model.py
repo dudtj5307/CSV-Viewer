@@ -1,3 +1,5 @@
+import bisect
+
 from PyQt6.QtWidgets import QTableView
 from PyQt6.QtCore import pyqtSignal, Qt, QObject
 
@@ -140,9 +142,17 @@ class SearchModel(QObject):
                     if needle in row_data[sc].lower():
                         self.matches.append((proxy_row, col))
 
-        # 전체 탐색 후, 결과가 있으면 첫번째 결과 선택
+        # 전체 탐색 후, 결과가 있으면 시작 위치 선택
+        #  - 범위검색: 기존대로 첫 매치(1/N)
+        #  - 전체검색: 내 현재 위치(앵커) '이상(>=)'인 첫 매치부터 (예: 103/200). 다 지나쳤으면 1번으로 wrap.
+        #    matches 는 (row,col) 오름차순이라 튜플 비교가 곧 '행 우선·열 다음' → bisect 로 O(log N).
         if self.matches:
-            self.current_index = 0
+            if scope_active:
+                self.current_index = 0
+            else:
+                anchor = self._anchor_rowcol()
+                i = bisect.bisect_left(self.matches, anchor)
+                self.current_index = i if i < len(self.matches) else 0
             self.select_current()
 
         self.send_result_to_gui()
@@ -161,6 +171,17 @@ class SearchModel(QObject):
         self.current_index = (self.current_index - 1 + len(self.matches)) % len(self.matches)
         self.select_current()
         self.send_result_to_gui()
+
+    def _anchor_rowcol(self):
+        # 전체검색 시작 기준점(proxy 좌표). 마지막 선택(현재) 셀이 유효하면 그 (행,열),
+        # 없으면 화면 최상단 보이는 행(열=0). ⚠ 느린 selectedRows/Columns 안 씀 — currentIndex/rowAt 만 O(1).
+        view = self.table_view
+        sm = view.selectionModel()
+        cur = sm.currentIndex() if sm is not None else None
+        if cur is not None and cur.isValid():
+            return (cur.row(), cur.column())
+        top = view.rowAt(0)
+        return (top if top >= 0 else 0, 0)
 
     def select_current(self):
         if self.current_index >= 0 and self.matches:
