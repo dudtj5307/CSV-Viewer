@@ -19,6 +19,10 @@ from GUI.gui_delegate import CompareBorderDelegate
 
 
 class ViewerWindow(QMainWindow, Ui_ViewerWindow):
+    # ESC 연타로 창 닫기: 첫 ESC 후 이 시간(초) 이내 다시 누르면 닫힘.
+    # ESC 안내 토스트가 떠 있는 시간도 동일 값으로 묶는다(연타 유효 시간 = 안내 노출 시간).
+    ESC_INTERVAL_SEC = 0.5
+
     def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
         self.setupUi(self)
@@ -194,7 +198,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # 'ESC' Key Pressed & Search Widget Off
         elif event.key() == Qt.Key.Key_Escape and not self.frame_search.isVisible():
-            if time.time() - self.last_esc_time < 1:  # ESC pressed interval time < 1sec
+            if time.time() - self.last_esc_time < self.ESC_INTERVAL_SEC:  # ESC 연타 간격(초)
+                print(time.time() - self.last_esc_time)
                 self.close()
             self.last_esc_time = time.time()    # Update last esc pressed time
             self.show_esc_message()
@@ -273,7 +278,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         pos_y = (self.height() - self.widget_esc.height()) // 2
         self.widget_esc.setGeometry(pos_x, pos_y, self.widget_esc.width(), self.widget_esc.height(),)
         self.widget_esc.show()
-        QTimer.singleShot(1000, self.widget_esc.hide)  # 1000 (ms)
+        QTimer.singleShot(int(self.ESC_INTERVAL_SEC * 1000), self.widget_esc.hide)  # 토스트 표시 시간 = 연타 유효 시간
 
     def add_item(self, csv_file_name):
         self.list_csv_names.addItem(csv_file_name)   # 리스트 표시명 = CSV 파일명(.csv 제외)

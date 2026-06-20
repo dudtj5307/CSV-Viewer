@@ -48,7 +48,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._delta_color = {}            # {base_col: {source_row: QColor}} - Δ 셀 사용자 색칠(소스 셀이 없어 별도 저장)
         self._delta_prev = {}             # {base_col: {source_row: prev_source_row|None}} - 짝(스냅샷 시점 이전 보이는 행)
         self._delta_first_bg = QBrush(QColor(236, 236, 236))   # 'R(n)-R(n-1)' 첫칸 옅은 회색 배경
-        self._FIRST_LABEL = "R(n)-R(n-1)"  # Δ 첫 행 안내 문구(스냅샷·배경·표시 한 곳에서 참조)
+        self._FIRST_LABEL = "r(n)-r(n-1)"  # Δ 첫 행 안내 문구(스냅샷·배경·표시 한 곳에서 참조)
 
     # ---------- 소스 모델 연결 ----------
     def setSourceModel(self, model):
