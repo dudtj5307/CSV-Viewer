@@ -89,12 +89,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.message_label.setStyleSheet("color: rgb(160, 160, 160); font-size: 24px; font-weight: bold;")
         self.message_label.hide()
 
-        # 짧은 알림 토스트 (Ctrl+S 저장 완료 등) - 창 하단 중앙, 일정 시간 뒤 자동 숨김
+        # 짧은 알림 토스트 (Ctrl+S 저장 결과 등) - table_csv 오른쪽 위 구석에 네모 박스, 일정 시간 뒤 자동 숨김.
+        # 배경색(성공=초록 / 실패=빨강)은 _show_toast 에서 매번 설정한다.
         self.toast = QLabel(self)
         self.toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.toast.setStyleSheet("QLabel { color: white; background-color: rgba(60, 80, 110, 235);"
-                                 " border-radius: 14px; padding: 8px 18px; font-size: 13px; }")
         self.toast.hide()
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
@@ -918,10 +917,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         file_state.update(proxy.export_state())     # column_filters, deltas
         if view_state.save_file_state(self._folder(), name, file_state):
             self.saved_states[name] = file_state     # 인메모리도 동기화(F5 재로드 시 일관)
-            self._show_toast("분석 결과를 저장했습니다")
+            self._show_toast("Result saved! (.viewer)", success=True)
         else:
-            QMessageBox.warning(self, "Save Failed",
-                                "분석 결과(.viewer) 저장에 실패했습니다.\n폴더 쓰기 권한을 확인해 주세요.")
+            self._show_toast("Save failed! Permission denied", success=False)
 
     def _apply_saved_state(self, name, entry, proxy, source):
         # 저장된 .viewer 상태가 '현재 파일 내용 해시'와 일치할 때만 복원(모델 생성 직후·뷰 부착 전).
@@ -943,12 +941,22 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             # 저장본이 손상/구버전이어도 CSV 열람은 절대 막지 않음(부분 복원이라도 진행)
             print(f"[ViewState] restore failed for '{name}': {e}")
 
-    def _show_toast(self, text, ms=1400):
-        # 짧은 알림(창 하단 중앙). ms 후 자동 숨김.
+    def _show_toast(self, text, ms=1400, success=True):
+        # 짧은 알림(table_csv 오른쪽 위 구석, 네모 박스). 성공=초록 / 실패=빨강. ms 후 자동 숨김.
+        if success:
+            bg = "rgba(54, 186, 101, 220)"
+        else:
+            bg = "rgba(200, 55, 55, 200)"
+        self.toast.setStyleSheet(
+            "QLabel { color: white; background-color: %s; border-radius: 3px;" 
+            "padding: 8px 14px; font-size: 14px; font-weight: 600; }" % (bg))
         self.toast.setText(text)
         self.toast.adjustSize()
-        x = (self.width() - self.toast.width()) // 2
-        y = self.height() - self.toast.height() - 40
+        # table_csv 오른쪽 위 구석을 토스트 부모(self) 좌표계로 변환해 안쪽 여백만큼 들여 배치
+        tr = self.table_csv.mapTo(self, self.table_csv.rect().topRight())
+        margin = 15
+        x = tr.x() - self.toast.width() - margin
+        y = tr.y() + margin - 5
         self.toast.move(max(0, x), max(0, y))
         self.toast.raise_()
         self.toast.show()
