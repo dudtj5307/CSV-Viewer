@@ -687,6 +687,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # selectionModel 은 setModel 마다 새로 생긴다 → 그때 Δ 비교 테두리 핸들러를 (재)연결.
         # 모델 교체 시 이전 테두리 마크는 비우고, 같은 selectionModel 엔 중복 연결하지 않는다.
         self.border_delegate.set_marks(None, None)
+        self.border_delegate.set_search_mark(None)    # CSV 전환(모델 교체) 시 검색 테두리도 초기화
         sm = self.table_csv.selectionModel()
         if sm is None or sm is self._wired_sel_model:
             return
@@ -825,9 +826,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def search_gui_hide(self):
         self.frame_search.setVisible(False)
-        # 검색바를 닫으면 범위 해제 + placeholder 원복
+        # 검색바를 닫으면 범위 해제 + placeholder 원복 + 검색 테두리 제거
         self.search_model.reset_scope()
         self.edit_text_input.setPlaceholderText("Search whole table (Enter)")
+        if self.border_delegate.set_search_mark(None):
+            self.table_csv.viewport().update()
 
     def search_gui_init(self):
         # 검색바를 열 때 현재 선택(열/행 전체)을 범위로 캡처하고, 그에 맞춰 placeholder 표시
@@ -849,6 +852,18 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         else:
             self.button_forward.setDisabled(False)
             self.button_backward.setDisabled(False)
+        self._update_search_mark()      # 검색 현재 셀 회색 테두리 갱신(매치 없으면 해제)
+
+    def _update_search_mark(self):
+        # 검색 현재 매치 셀에 회색 테두리. 헤더 매치(행 -1)는 셀 테두리 대상이 아니라 None.
+        sm = self.search_model
+        cell = None
+        if sm.matches and 0 <= sm.current_index < len(sm.matches):
+            row, col = sm.matches[sm.current_index]
+            if row >= 0:
+                cell = (row, col)
+        if self.border_delegate.set_search_mark(cell):
+            self.table_csv.viewport().update()
 
     def closeEvent(self, event):
         # 진행 중인 로더 스레드 정리 (실행 중 GC로 인한 크래시 방지)
