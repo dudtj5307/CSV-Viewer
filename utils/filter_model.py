@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QAbstractProxyModel, QModelIndex, Qt
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QBrush, QColor
 
 
 class CSVFilterProxyModel(QAbstractProxyModel):
@@ -45,6 +45,10 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._src_to_pcol = []            # source_col -> 그 'src' 프록시 열
         self._italic_font = QFont()       # Δ 열 셀은 italic 으로 표시 (FontRole)
         self._italic_font.setItalic(True)
+        self._delta_color = {}            # {base_col: {source_row: QColor}} - Δ 셀 사용자 색칠(소스 셀이 없어 별도 저장)
+        self._delta_prev = {}             # {base_col: {source_row: prev_source_row|None}} - 짝(스냅샷 시점 이전 보이는 행)
+        self._delta_first_bg = QBrush(QColor(236, 236, 236))   # 'R(n)-R(n-1)' 첫칸 옅은 회색 배경
+        self._FIRST_LABEL = "R(n)-R(n-1)"  # Δ 첫 행 안내 문구(스냅샷·배경·표시 한 곳에서 참조)
 
     # ---------- 소스 모델 연결 ----------
     def setSourceModel(self, model):
@@ -60,6 +64,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._delta_base = set()
         self._delta_snap = {}
         self.delta_filters = {}
+        self._delta_color = {}
+        self._delta_prev = {}
         if model is not None:
             # QAbstractProxyModel 은 소스 시그널을 자동 전달하지 않으므로 직접 연결
             model.dataChanged.connect(self._on_source_data_changed)
@@ -208,15 +214,26 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return None
         pc = index.column()
         if 0 <= pc < len(self._col_kind) and self._col_kind[pc] == 'delta':
-            # Δ 열: 스냅샷 표시문자열 + italic 폰트. 그 외 role 은 None(하이라이트 등 없음).
+            # Δ 열: 스냅샷 표시문자열 + italic 폰트 + 배경(사용자 색칠 우선, 없으면 첫칸 옅은 회색).
             if role == Qt.ItemDataRole.FontRole:
                 return self._italic_font
-            if role != Qt.ItemDataRole.DisplayRole:
-                return None
             r = index.row()
             if not (0 <= r < len(self._accepted)):
                 return None
-            return self._delta_snap.get(self._col_src[pc], {}).get(self._accepted[r], "")
+            base = self._col_src[pc]
+            sr = self._accepted[r]
+            if role == Qt.ItemDataRole.BackgroundRole:
+                color = self._delta_color.get(base, {}).get(sr)
+                if color is not None:
+                    return QBrush(color)
+                if self._delta_snap.get(base, {}).get(sr) == self._FIRST_LABEL:
+                    return self._delta_first_bg
+                return None
+            if role == Qt.ItemDataRole.ToolTipRole:
+                return self._delta_tooltip(base, sr)   # hover 시에만 호출(페인트 무관) → 무비용
+            if role != Qt.ItemDataRole.DisplayRole:
+                return None
+            return self._delta_snap.get(base, {}).get(sr, "")
         return self._src.data(self.mapToSource(index), role)
 
     def flags(self, index):
@@ -275,6 +292,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             self.beginResetModel()
             self._delta_base.discard(src_col)
             self._delta_snap.pop(src_col, None)
+            self._delta_color.pop(src_col, None)
+            self._delta_prev.pop(src_col, None)
             self.delta_filters.pop(src_col, None)
             self._rebuild_columns()
             self._rebuild()
@@ -284,6 +303,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self.beginRemoveColumns(QModelIndex(), pos, pos)
         self._delta_base.discard(src_col)
         self._delta_snap.pop(src_col, None)
+        self._delta_color.pop(src_col, None)
+        self._delta_prev.pop(src_col, None)
         self._rebuild_columns()
         self.endRemoveColumns()
 
@@ -342,32 +363,38 @@ class CSVFilterProxyModel(QAbstractProxyModel):
 
     def _snapshot(self, base):
         """base 소스 열의 Δ 값을 '현재 보이는 행 순서'로 1회 계산해 고정.
-        첫 보이는 행=설명문구, 이후=직전 보이는 행과의 차. 숨겨진 행은 미저장(=빈칸)."""
+        첫 보이는 행=설명문구, 이후=직전 보이는 행과의 차. 짝(이전 소스행)도 _delta_prev 에 저장
+        (Δ 셀 선택 시 비교한 두 부모셀 테두리/툴팁용). 숨겨진 행은 미저장(=빈칸)."""
         rows = self._src.rows
         snap = {}
+        partner = {}
         prev = None
+        prev_sr = None
         first = True
         for sr in self._accepted:
             cur = rows[sr][base]
             if first:
-                snap[sr] = "R(n)-R(n-1)"
+                snap[sr] = self._FIRST_LABEL
                 first = False
             else:
                 snap[sr] = self._format_delta(prev, cur)
+            partner[sr] = prev_sr        # 첫 행은 None(비교 대상 없음)
             prev = cur
+            prev_sr = sr
         self._delta_snap[base] = snap
+        self._delta_prev[base] = partner
 
     @staticmethod
     def _format_delta(prev, cur):
         """Δ 표시 포맷 (유일한 포맷 지점). 숫자면 차이(정수면 정수, 아니면 부동소수 노이즈 없이),
-        숫자가 아니면 '—'. 추후 '동일/변경' 텍스트로 바꾸려면 여기만 수정한다(prev/cur 둘 다 사용 가능)."""
+        숫자가 아니면(문자 비교) 같으면 '=', 다르면 '≠'. (여기만 바꾸면 표시·툴팁 둘 다 따라옴)"""
         try:
             d = float(cur) - float(prev)
             if d == int(d):
                 return str(int(d))
             return f"{d:g}"
         except (ValueError, TypeError, OverflowError):
-            return "—"
+            return "=" if cur == prev else "≠"
 
     # ---------- 캐스케이딩 드롭다운(이 열 제외 후보값) ----------
     def _row_passes(self, i, exclude_src=None, exclude_delta=None):
@@ -422,3 +449,87 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         스냅샷에 없는 행(=숨겨졌던 빈칸)은 대상 없음."""
         snap = self._delta_snap.get(base, {})
         return [i for i, v in snap.items() if v == value]
+
+    # ---------- Δ 셀 색칠 (소스 셀이 없어 프록시에 (기준열, 소스행)으로 별도 저장) ----------
+    def set_delta_cell_colors(self, color, targets):
+        """targets=[(base_col, source_row)] 의 Δ 셀을 color 로 칠한다(None=해제). 선택 색칠용."""
+        bases = set()
+        for base, sr in targets:
+            if base not in self._delta_base:
+                continue
+            cmap = self._delta_color.setdefault(base, {})
+            if color is None:
+                cmap.pop(sr, None)
+            else:
+                cmap[sr] = color
+            bases.add(base)
+        self._emit_delta_bg(bases)
+
+    def color_delta_rows(self, color, source_rows):
+        """주어진 소스 행들의 '모든 Δ 열' 셀을 color 로 칠한다(None=해제). 값별 행 색칠용."""
+        bases = set()
+        for base in self._delta_base:
+            cmap = self._delta_color.setdefault(base, {})
+            for sr in source_rows:
+                if color is None:
+                    cmap.pop(sr, None)
+                else:
+                    cmap[sr] = color
+            bases.add(base)
+        self._emit_delta_bg(bases)
+
+    def clear_all_delta_colors(self):
+        """모든 Δ 셀 색칠 해제 (소스 모델의 '전체 해제'와 짝)."""
+        if not self._delta_color:
+            return
+        bases = set(self._delta_color)
+        self._delta_color = {}
+        self._emit_delta_bg(bases)
+
+    def _emit_delta_bg(self, bases):
+        # 변경된 Δ 열들의 전 행 구간을 1회 dataChanged (뷰는 보이는 셀만 다시 그림 → 행 수 무관)
+        n = len(self._accepted)
+        if n == 0:
+            return
+        for base in bases:
+            if base in self._delta_base and 0 <= base < len(self._src_to_pcol):
+                pcol = self._src_to_pcol[base] + 1
+                self.dataChanged.emit(self.createIndex(0, pcol),
+                                      self.createIndex(n - 1, pcol),
+                                      [Qt.ItemDataRole.BackgroundRole])
+
+    # ---------- Δ 비교(짝) 조회: 선택 시 부모셀 테두리 + hover 툴팁 ----------
+    def delta_compare_cells(self, proxy_col, proxy_row):
+        """Δ 셀(proxy_col, proxy_row)이 비교한 두 부모셀의 프록시 좌표를 반환.
+        반환: (base_pcol, cur_prow, prev_prow|None) 또는 None(Δ셀 아님/첫 행).
+        prev_prow=None → 이전 행이 필터로 숨겨짐(빨강 테두리 표시 불가)."""
+        if not self.is_delta_column(proxy_col) or not (0 <= proxy_row < len(self._accepted)):
+            return None
+        base = self._col_src[proxy_col]
+        sr = self._accepted[proxy_row]
+        prev_sr = self._delta_prev.get(base, {}).get(sr)
+        if prev_sr is None:                       # 첫 행 = 비교 대상 없음
+            return None
+        base_pcol = self._src_to_pcol[base]
+        if self._src_to_proxy is None:            # 필터 없음(항등) → proxy_row == source_row
+            prev_prow = prev_sr if 0 <= prev_sr < len(self._accepted) else None
+        else:
+            prev_prow = self._src_to_proxy.get(prev_sr)   # 숨겨졌으면 None
+        return (base_pcol, proxy_row, prev_prow)
+
+    def _delta_tooltip(self, base, sr):
+        """Δ 셀 hover 툴팁: 비교한 두 부모셀의 행번호 + 값 + 관계(숫자는 차이식, 문자는 =/≠)."""
+        prev_sr = self._delta_prev.get(base, {}).get(sr)
+        if prev_sr is None:                       # 첫 행
+            return None
+        rows = self._src.rows
+        cur, prev = rows[sr][base], rows[prev_sr][base]
+        hidden = self._src_to_proxy is not None and prev_sr not in self._src_to_proxy
+        note = f" (hidden)" if hidden else ""
+        try:                                       # 숫자면 'cur − prev = 차이', 문자면 'cur =/≠ prev'
+            float(cur); float(prev)
+            prev_text = f"{prev}" if float(prev) >=0 else f"({prev})"
+            body = f"{cur} − {prev_text} = {self._format_delta(prev, cur)}"
+        except (ValueError, TypeError):
+            body = f"{cur} {self._format_delta(prev, cur)} {prev}"
+        return f"row #{sr + 1} ↔ #{prev_sr + 1}{note}\n{body}"

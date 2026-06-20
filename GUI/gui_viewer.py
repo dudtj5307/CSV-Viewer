@@ -14,7 +14,8 @@ from utils.search_model import SearchModel
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
 from GUI.ui.widget_esc import Ui_WidgetESC
 
-from GUI.gui_filter import FilterHeaderView
+from GUI.gui_header import FilterHeaderView
+from GUI.gui_delegate import CompareBorderDelegate
 
 
 class ViewerWindow(QMainWindow, Ui_ViewerWindow):
@@ -114,6 +115,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # Custom horizontal header with filtering
         self.table_csv.setHorizontalHeader(FilterHeaderView(Qt.Orientation.Horizontal, self))
 
+        # Δ 셀 선택 시 비교한 두 부모셀에 테두리(현재=파랑/이전=빨강)를 그리는 delegate
+        self.border_delegate = CompareBorderDelegate(self.table_csv)
+        self.table_csv.setItemDelegate(self.border_delegate)
+        self._wired_sel_model = None     # 핸들러를 연결한 selectionModel 추적(setModel 마다 새로 생겨 중복 연결 방지)
+
         # CSV table headers - size
         self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
         self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
@@ -144,10 +150,25 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         proxy_model = entry['table_model'] if entry else None
         if not proxy_model:
             return
-        # Δ(가상) 셀은 소스에 대응이 없어 mapToSource가 무효 인덱스 → 색칠 대상에서 제외
-        source_indexes = [si for si in (proxy_model.mapToSource(pi)
-                                        for pi in self.table_csv.selectedIndexes()) if si.isValid()]
-        proxy_model.sourceModel().highlight_cell(color, source_indexes)
+        source_model = proxy_model.sourceModel()
+        if color is None:                       # button_none = 전체 해제 (소스 + Δ)
+            source_model.highlight_cell(None, [])
+            proxy_model.clear_all_delta_colors()
+            self.table_csv.clearSelection()
+            return
+        # 선택 셀을 실제 셀(소스)과 Δ 셀로 분리. Δ 셀은 소스가 없어 프록시에 (기준열, 소스행)으로 저장.
+        accepted = proxy_model.accepted_rows()
+        source_indexes = []
+        delta_targets = []
+        for pi in self.table_csv.selectedIndexes():
+            if proxy_model.is_delta_column(pi.column()):
+                delta_targets.append((proxy_model.source_column_of(pi.column()), accepted[pi.row()]))
+            else:
+                si = proxy_model.mapToSource(pi)
+                if si.isValid():
+                    source_indexes.append(si)
+        source_model.highlight_cell(color, source_indexes)
+        proxy_model.set_delta_cell_colors(color, delta_targets)
         self.table_csv.clearSelection()
 
     def highlight_cell(self, event=None):
@@ -579,6 +600,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             entry['table_model'] = proxy_model
             self.table_csv.setModel(proxy_model)
 
+        self._wire_selection_signals()      # 새 selectionModel 에 Δ 비교 테두리 핸들러 연결 + 이전 마크 정리
+
         self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
         self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
 
@@ -589,6 +612,33 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self.table_csv.horizontalScrollBar().setValue(last_view[1])
         else:
             self.table_csv.scrollTo(self.table_csv.model().index(0, 0), QAbstractItemView.ScrollHint.PositionAtTop)
+
+    def _wire_selection_signals(self):
+        # selectionModel 은 setModel 마다 새로 생긴다 → 그때 Δ 비교 테두리 핸들러를 (재)연결.
+        # 모델 교체 시 이전 테두리 마크는 비우고, 같은 selectionModel 엔 중복 연결하지 않는다.
+        self.border_delegate.set_marks(None, None)
+        sm = self.table_csv.selectionModel()
+        if sm is None or sm is self._wired_sel_model:
+            return
+        sm.currentChanged.connect(self._on_delta_selection)
+        sm.selectionChanged.connect(self._on_delta_selection)
+        self._wired_sel_model = sm
+
+    def _on_delta_selection(self, *args):
+        # 현재 셀이 'Δ 데이터 셀'이면 비교한 두 부모셀(현재=파랑/이전=빨강)에 테두리, 아니면 해제.
+        proxy = self.table_csv.model()
+        sm = self.table_csv.selectionModel()
+        blue = red = None
+        if proxy is not None and sm is not None and sm.hasSelection() and hasattr(proxy, "delta_compare_cells"):
+            cur = sm.currentIndex()
+            if cur.isValid():
+                info = proxy.delta_compare_cells(cur.column(), cur.row())
+                if info is not None:
+                    base_pcol, cur_prow, prev_prow = info
+                    blue = (cur_prow, base_pcol)
+                    red = (prev_prow, base_pcol) if prev_prow is not None else None
+        if self.border_delegate.set_marks(blue, red):
+            self.table_csv.viewport().update()
 
     def copy_selection(self):
         table = self.table_csv

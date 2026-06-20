@@ -525,6 +525,9 @@ QPushButton:disabled {
         <enum>QFrame::Shadow::Raised</enum>
        </property>
        <widget class="QPushButton" name="button_row_delta">
+        <property name="enabled">
+         <bool>true</bool>
+        </property>
         <property name="geometry">
          <rect>
           <x>50</x>
@@ -560,6 +563,7 @@ QPushButton:pressed {
 }
 
 QPushButton:disabled {
+    background-color: rgb(200,200,200);
     color: rgb(200,200,200);
 }</string>
         </property>

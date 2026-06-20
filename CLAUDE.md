@@ -35,7 +35,8 @@ Project_CSV_Viewer/
 ├── CSV_Viewer.spec            # PyInstaller 빌드 (onedir, windowed)
 ├── GUI/
 │   ├── gui_viewer.py          # ViewerWindow - CSV 목록 + 테이블 뷰어 (메인 화면)
-│   ├── gui_filter.py          # FilterHeaderView / FilterWidget - 열 필터 헤더
+│   ├── gui_header.py          # FilterHeaderView - 테이블 가로 헤더(우클릭→필터 팝업 띄움)
+│   ├── gui_filter.py          # FilterWidget - 우클릭 필터 팝업창(체크박스 필터 UI)
 │   ├── res/                   # 아이콘/스피너 리소스 (png · ico · gif)
 │   └── ui/                    # pyuic6 자동생성 UI 파일 (직접 수정 금지)
 │       ├── dialog_viewer.py   # Ui_ViewerWindow
@@ -80,8 +81,8 @@ csv_viewer.py main()
 |--------|------|------|
 | `main()` | csv_viewer.py | 진입점. 인자 폴더면 바로 열고, 없으면 빈 창 + 폴더 선택창(취소 시 빈 화면 유지) |
 | `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder=None)`** (None=빈 상태) |
-| `FilterHeaderView` | gui_filter.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 |
-| `FilterWidget` | gui_filter.py | 체크박스 기반 필터 UI |
+| `FilterHeaderView` | gui_header.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 (`FilterWidget` 사용) |
+| `FilterWidget` | gui_filter.py | 체크박스 기반 필터 팝업창 |
 | `CSVTableModel` | utils/table_model.py | QAbstractTableModel. rows + highlight_cells |
 | `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map) (아래 ⚠) |
 | `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
@@ -151,24 +152,33 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 
 ## 알려진 TODO / 미완성 항목
 
-- `FilterHeaderView` 셀 선택 시 열 헤더 볼드 미작동
-  - 원인: `QHeaderView::section { ... }` stylesheet가 QStyleSheetStyle로 렌더링을 가로채 native 볼드 처리가 안 됨
-  - 해결: `paintSection` override로 직접 볼드 텍스트 그리기 (보류)
-  - ⚠️ paintSection 직접 드로잉 오버레이는 `QWidget.grab()`에 캡처되지 않음(clip 비움) → 자동/스크린샷 검증 불가. 필터 열 표시(`⏷`)도 이 때문에 paintSection 대신 `headerData` 텍스트 마커로 구현함
+- (현재 없음) — '셀 선택 시 열 헤더 볼드 미작동'은 해결됨(아래 변경 이력 "열 헤더 폰트 스타일" 참고).
+  - ⚠️ 참고로 헤더 폰트(bold/italic)는 offscreen이 굵기를 렌더하지 않아 자동/스크린샷 검증 불가 → 실Windows 육안이 최종 관문(필터 열의 `⧩` 텍스트 마커는 `headerData`라 offscreen에서도 보임).
 
 ---
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
 
+- **Δ 셀 선택 시 비교셀 테두리 + hover 툴팁 + 문자 비교 `=`/`≠`**: Δ 셀(첫 행 제외) 선택 시 그 차이가 비교한 두 부모셀에 테두리(현재 R(n)=파랑, 이전 R(n-1)=빨강) — `gui_delegate.CompareBorderDelegate`가 `super().paint()` 위에 overlay(색·두께는 delegate 상수, 사용자가 직접 조정). **'이전 행'은 *스냅샷 시점의 이전 보이는 행*** (`_snapshot`이 `_delta_prev[base][sr]=prev_sr`를 동시 저장)이라 화면상 윗행과 다를 수 있고, 그 행이 **필터로 숨겨졌으면 빨강 생략**(`delta_compare_cells`가 `prev_prow=None` 반환 → 파랑만). 선택 변경(`currentChanged`+`selectionChanged`)마다 좌표 재계산→마크 갱신(바뀔 때만 `viewport().update()`); selectionModel은 setModel마다 새로 생기므로 `_wire_selection_signals`(update_table)로 (재)연결+이전 마크 정리. **툴팁**(`ToolTipRole`): 두 행번호+값+관계 표시 — `ToolTipRole`은 *hover 시 그 셀 1개만* 조회(페인트/스크롤과 무관)라 18만 행에도 **무비용**. **포맷 정정**: `_format_delta`의 비숫자(문자) 결과를 `—`→`=`/`≠`로 변경(표시·툴팁이 이 한 곳을 따라감).
+
+- **Δ 셀 색칠 + Δ 열 음영**: ① Δ 셀은 소스 셀이 없어(=`mapToSource` 무효) 색을 프록시 `_delta_color={base:{source_row:QColor}}`에 별도 저장하고, `data()`의 `BackgroundRole`이 *사용자 색 > 첫 행 `R(n)-R(n-1)` 옅은 회색(236) > 없음* 순으로 반환. **세 경로 모두 지원**: 선택+색(`gui_viewer._apply_highlight`가 선택 셀을 실제 셀↔Δ 셀로 분리해 Δ는 `set_delta_cell_colors`로 라우팅), 필터창 값별 색(`gui_header.paint_value`가 `color_delta_rows` 추가 호출), `button_none`=전체 해제(`clear_all_delta_colors`, 소스 전체해제와 짝). `_emit_delta_bg`는 변경된 Δ 열의 전 행을 1회 `dataChanged`(뷰는 보이는 셀만 다시 그림 → 행 수 무관). 첫칸 문구는 `_FIRST_LABEL` 한 곳에서 참조. ② Δ 열 **헤더** 배경은 `gui_header.paintSection`에서 `fillRect(223)`로 약간 어둡게 직접 그림(super 는 스타일시트 240으로 덮으므로 Δ 열만 분기해 수동 렌더; 텍스트는 좌측·수직중앙 동일).
+
+- **열 헤더 폰트 스타일(선택/필터 열 → Bold, Δ 열 → Italic)**: `gui_header.FilterHeaderView.paintSection`에서 상태에 맞는 폰트만 painter에 주입하고 `super().paintSection()`에 위임한다 — 배경·테두리·정렬·말줄임 등 렌더는 native 그대로, `QHeaderView::section` 스타일시트도 **유지**(측정상 주입한 painter 폰트가 super를 거쳐 텍스트까지 도달하므로 배경/말줄임 재구현·스타일시트 제거 불필요). 판정: 선택=`initStyleOptionForIndex`의 `State_On`(필터/델타로 모델이 reset/insert돼도 신뢰 가능), 필터=`src in column_filters`(Δ열은 `has_delta_filter`), Δ=`is_delta_column`.
+  - ⚠ **진짜 원인 = `highlightSections`**: 커스텀 헤더는 bare QHeaderView 기본값 `False`라 선택해도 `State_On`이 안 떠 *가로 헤더만* 안 굵어졌다(세로 헤더는 QTableView가 자동으로 True → 사용자가 본 비대칭의 원인). `__init__`에서 `setHighlightSections(True)`로 해결. 켜도 선택 추적은 구간 기반이라 행 수 무관.
+  - ⚠ **정정**: QHeaderView는 헤더 `FontRole`을 *아예 안 읽는다*(스타일시트 유무 무관 — 측정 확인). 따라서 헤더 폰트는 FontRole이 아니라 paintSection으로만 가능. (Δ '셀' italic은 delegate 경로라 FontRole로 정상 — 별개 경로.)
+  - ⚠ 성능: 보이는 섹션당 `State_On` 조회 ≈6µs(200k행 전체 열 선택도 0.000s) → 행 수 무관. 검증: offscreen은 굵기 미렌더 → 실Windows 육안 최종.
+
+- **`FilterHeaderView` 모듈 분리(`GUI/gui_header.py` 신설)**: 테이블 가로 헤더(`FilterHeaderView`)는 우클릭 필터 팝업창(`FilterWidget`)과 **별개 개념**이라 `gui_filter.py`에서 떼어 `GUI/gui_header.py`로 옮겼다. 의존은 **단방향**(`gui_header`가 `gui_filter.FilterWidget`을 import, 역방향 없음 → 순환 없음). `gui_viewer`의 import 1줄만 `gui_header`로 변경. **`utils/`가 아니라 `GUI/`에 둔 이유**: `utils/`는 비시각 모델/스레드 전용(QWidget 없음)이고 `FilterHeaderView`는 `QHeaderView`(시각 위젯)이라 `gui_*` 컨벤션을 따른다. 동작/로직 변경 없음(순수 이동).
+
 - **복사(`copy_selection`) 대용량 성능**: 전 열/행 복사가 18만 행에서 수 초 멈추던 문제 해결(`selectedColumns()`/`selectedRows()`≈3.6s + `selectedIndexes()` 18만 개 생성 + 셀별 `data()` 호출이 원인). 이제 `selectionModel().selection()`의 **range만** 보고(헤더행/행번호열 포함 여부는 `_spans_cover` 구간 커버리지로), 셀 값은 **소스 `rows` + Δ 스냅샷을 직접** 읽는다(프록시 `accepted_rows()`로 proxy→source 행 벌크 매핑, `source_columns()`로 열 변환, Δ 열은 `delta_snapshot()`). 분리/희소 선택은 열별 병합 구간 + `bisect`로 (row,col) 선택 판정. **측정: 10만 행 열 복사 ≈ 0.04s.** (검색의 `capture_scope`와 동일 철학.)
 
-- **Δ(행간 차이) 가상 열**: 열 헤더 우클릭 필터창의 `☰🡫Δ` 버튼(`button_row_delta`, .ui에 이미 존재) → 그 열 바로 오른쪽에 `Δ [원본헤더]` 가상 열 추가. 각 행 = (그 행 값)−(윗행 값), 첫 행 `R(n)-R(n-1)`, 비숫자 `—`. 흐름: `gui_filter.contextMenuEvent`(클릭 열→`source_column_of`로 소스 열 변환) → `filter_model.add_delta_column/remove_delta_column`.
+- **Δ(행간 차이) 가상 열**: 열 헤더 우클릭 필터창의 `☰🡫Δ` 버튼(`button_row_delta`, .ui에 이미 존재) → 그 열 바로 오른쪽에 `Δ [원본헤더]` 가상 열 추가. 각 행 = (그 행 값)−(윗행 값), 첫 행 `R(n)-R(n-1)`, 비숫자(문자)는 `=`/`≠`. 흐름: `gui_header.contextMenuEvent`(클릭 열→`source_column_of`로 소스 열 변환) → `filter_model.add_delta_column/remove_delta_column`.
   - ⚠ **스냅샷(고정)**: `add_delta_column` 시점의 *보이는 행 순서*로 1회 계산해 `_delta_snap[base]={source_row:문자열}`에 저장(`_snapshot`). 이후 필터가 바뀌어도 **재계산 안 함** → 스냅샷 때 숨겨졌던 행은 키가 없어 필터를 풀어도 빈칸, 계산됐던 행은 값 유지. (동적 재계산 아님 — 사용자 합의.) 포맷은 `_format_delta` **한 곳**(추후 '동일/변경' 텍스트로 교체 시 여기만).
   - ⚠ **열 간접화(col_map)**: 프록시가 가정하던 '프록시 열==소스 열'을 깼다. `_col_kind/_col_src/_src_to_pcol`로 프록시↔소스 열 매핑. **`column_filters`·`setFilterForColumn`·`column_values_excluding_self`·`source_rows_with_value`는 전부 소스 열 키**(이미 `row[col]` 인덱싱). 헤더뷰가 클릭 열을 `source_column_of`로 1회 변환해 넘긴다. Δ 열은 `mapToSource` 무효.
   - ⚠ **성능**: 추가 = `beginInsertColumns` 1회 + col_map(열 수만큼) 재구성. 뷰는 보이는 셀만 다시 그려 행 수와 무관하게 즉시. 원본 모델에 실제 열 삽입은 금지(18만 행 `row.insert` 프리즈 + 필터/하이라이트 키 재색인 + 커스텀 프록시가 columnsInserted 자동전달 안 함).
   - ⚠ **Δ 열에서 깨지던 곳 동반 수정**: `search_model.search`는 소스 행을 `row[proxy_col]`로 직접 읽어 Δ 열에서 IndexError → `proxy.source_columns()`로 변환·Δ 열 스킵(검색 제외). `copy_selection` 헤더는 `model.column_label(c)`(⧩ 없음, Δ[..] 포함). `_apply_highlight`는 무효(Δ) 소스 인덱스 스킵.
   - ⚠ 버튼 상태(우클릭 열 따라): 일반 열=추가 / 이미 Δ 보유한 원본 열=비활성 / Δ 열=삭제. 추가는 원본 열에서 1회, 제거는 Δ 열에서. 버튼은 **텍스트 대신 아이콘**(`GUI/res/button_row_delta.png`=추가, `button_row_delta_delete.png`=삭제)을 `setIcon`으로 표시 — popup이 매번 새 인스턴스라 `contextMenuEvent`에서 그때 `setText("")`+`setIcon`(+연결)을 설정. 아이콘 경로는 `self.parent.icon_path`(ViewerWindow 주입).
-  - ⚠ **Δ 셀 italic**: `data()`가 Δ 열 `FontRole`에 `_italic_font`(italic) 반환. (헤더는 `QHeaderView::section` stylesheet가 FontRole을 가로채 italic 미적용 — 셀만.)
+  - ⚠ **Δ 셀 italic**: `data()`가 Δ 열 `FontRole`에 `_italic_font`(italic) 반환(셀은 delegate가 FontRole을 honor). 헤더 italic은 FontRole이 아니라 `gui_header.paintSection`이 담당(QHeaderView는 헤더 FontRole을 안 읽음 — 변경 이력 "열 헤더 폰트 스타일" 참고).
   - ⚠ **Δ 열 필터는 원본 값이 아니라 Δ값(스냅샷) 기준**: 별도 `delta_filters`(base 열 키, `column_filters`와 분리) + `_rebuild`가 `_delta_snap` 조회로 AND 판정. API: `delta_values_excluding_self`(캐스케이딩 후보값)·`setDeltaFilterForColumn`·`has_delta_filter`·`source_rows_with_delta_value`(Δ값 색칠). 헤더뷰는 `is_delta`로 apply/clear/paint/값목록 경로를 분기. Δ값 필터 걸리면 Δ 헤더에도 `⧩`. `_row_passes(i, exclude_src, exclude_delta)`는 인덱스 기반(두 필터 모두). Δ 열 삭제 시 그 Δ필터도 해제(숨기던 행 복원 위해 reset).
 
 - **필터창 값별 행 색칠**: 열 헤더 우클릭 필터창의 각 값 항목 우측 색버튼 → 그 값을 가진 모든 행을 색칠. 흐름: `gui_filter._FilterItemRow`/`FilterWidget.color_picked` → `FilterHeaderView.paint_value` → `filter_model.source_rows_with_value`(선택 시점 lazy 1회 O(N) 스캔) → `table_model.highlight_rows`.
