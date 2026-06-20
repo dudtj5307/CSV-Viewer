@@ -106,6 +106,20 @@
 
     </ComponentGroup>
 
+    <!-- ★ 설치/제거 '시작 전' 확인 팝업: Yes/No 로 사용자 동의를 받는다.
+         함수형 VBScript(Binary 테이블에 임베드)라 반환값이 Windows Installer 로 전달된다:
+           1 = 진행(Yes) · 2 = 사용자 취소(No → 깨끗한 user-exit, 치명적오류 대화상자 없음).
+         반환값을 반영하려면 Return="check" 필수(완료 팝업의 Return="ignore" 와 대비).
+         ExecuteAction '전'에 실행 → No 면 실제 설치/제거가 시작되기 '전에' 중단된다.
+         MsgBox 는 대화형 데스크톱 필요 → immediate(사용자 컨텍스트). /qn 무인설치는 UI 시퀀스를
+         아예 타지 않아 확인창이 안 뜨고 그대로 진행된다(완료 팝업과 동일). -->
+    <Binary Id="ConfirmInstallScript"   SourceFile="$(sys.SOURCEFILEDIR)confirm_install.vbs" />
+    <Binary Id="ConfirmUninstallScript" SourceFile="$(sys.SOURCEFILEDIR)confirm_uninstall.vbs" />
+    <CustomAction Id="ConfirmInstall" BinaryRef="ConfirmInstallScript"
+                  VBScriptCall="ConfirmInstall" Execute="immediate" Return="check" />
+    <CustomAction Id="ConfirmUninstall" BinaryRef="ConfirmUninstallScript"
+                  VBScriptCall="ConfirmUninstall" Execute="immediate" Return="check" />
+
     <!-- ★ 완료 안내 팝업: 설치/제거가 끝나면 메시지 박스를 띄운다.
          InstallUISequence(사용자 컨텍스트, UI 가 있을 때만)에서 ExecuteAction 직후 실행
          → /qn 무인 설치에서는 뜨지 않는다. Return=ignore 라 팝업이 실패해도 설치엔 영향 없음. -->
@@ -117,6 +131,10 @@
                   Execute="immediate" Return="ignore" />
 
     <InstallUISequence>
+      <!-- 작업 '시작 전' 확인(ExecuteAction 전). REMOVE 는 위 SetProperty(Before CostFinalize)로
+           이미 세팅돼 있어 설치/제거를 정확히 구분한다. No → user-exit 로 작업 중단. -->
+      <Custom Action="ConfirmInstall"   Before="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
+      <Custom Action="ConfirmUninstall" Before="ExecuteAction" Condition="REMOVE=&quot;ALL&quot;" />
       <!-- 신규 설치 완료(제거가 아닐 때) -->
       <Custom Action="ShowInstallDone" After="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
       <!-- 제거 완료(토글 재실행 제거 또는 /x 제거) -->

@@ -11,6 +11,7 @@
 | 폴더 우클릭 메뉴 | `Directory\shell` → **Open with CSV Viewer(V)** |
 | 폴더 빈 공간 우클릭 | `Directory\Background\shell` → **Open with CSV Viewer(V)** |
 | 재실행 시 제거(토글) | 이미 설치돼 있으면 같은 MSI 재실행 → **제거**(`REMOVE=ALL`) |
+| 설치/제거 전 확인 | 작업 '시작 전' 영문 Yes/No 확인창. 설치=`Do you wish to install CSV Viewer?` · 제거=`Do you wish to uninstall CSV Viewer?` (**No → 취소**, 아무것도 안 바뀜) |
 
 > 우클릭 시 `"...\CSV Viewer.exe" "<해당 폴더>"` 로 실행됩니다(`%V`).
 > per-machine 설치라 **설치/제거는 관리자 권한**이 필요합니다.
@@ -52,6 +53,12 @@ msiexec /x "CSV Viewer Setup.msi" /qb
 > (한 번 더 실행하면 다시 설치 → 토글) 진짜 제거는 `msiexec /x` 또는 제어판에서도 가능.
 > 동작 원리: 설치돼 있으면(`Installed`) `REMOVE=ALL` 을 `CostFinalize` 전에 세팅. `/x` 제거·버전 업그레이드 중
 > 구버전 제거와는 조건(`NOT REMOVE`, `NOT UPGRADINGPRODUCTCODE`)으로 구분.
+
+> **설치/제거 전 확인창**: 더블클릭(또는 제어판/`msiexec` UI) 으로 실행하면 작업이 **시작되기 전에** 영문 Yes/No
+> 확인창이 뜹니다 — 설치: `Do you wish to install CSV Viewer?`, 제거: `Do you wish to uninstall CSV Viewer?`.
+> **No** 를 누르면 깨끗하게 취소되어(파일/환경변수/레지스트리 **변경 없음**), **Yes** 면 진행합니다.
+> 확인창은 `ExecuteAction` 전에 실행되는 함수형 VBScript 커스텀액션(반환 `2`=취소 / `1`=진행)입니다.
+> **무인 설치(`/qn`)** 에서는 UI 시퀀스를 타지 않으므로 확인창 없이 그대로 진행됩니다(완료 팝업도 동일).
 
 ## 동작 확인
 
