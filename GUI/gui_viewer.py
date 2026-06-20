@@ -199,7 +199,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 'ESC' Key Pressed & Search Widget Off
         elif event.key() == Qt.Key.Key_Escape and not self.frame_search.isVisible():
             if time.time() - self.last_esc_time < self.ESC_INTERVAL_SEC:  # ESC 연타 간격(초)
-                print(time.time() - self.last_esc_time)
                 self.close()
             self.last_esc_time = time.time()    # Update last esc pressed time
             self.show_esc_message()
