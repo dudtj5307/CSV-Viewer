@@ -11,6 +11,7 @@ from utils.table_model import CSVTableModel
 from utils.filter_model import CSVFilterProxyModel
 from utils.csv_loader import CSVLoaderThread
 from utils.search_model import SearchModel
+from utils import view_state
 
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
 from GUI.ui.widget_esc import Ui_WidgetESC
@@ -88,9 +89,23 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.message_label.setStyleSheet("color: rgb(160, 160, 160); font-size: 24px; font-weight: bold;")
         self.message_label.hide()
 
+        # 짧은 알림 토스트 (Ctrl+S 저장 완료 등) - 창 하단 중앙, 일정 시간 뒤 자동 숨김
+        self.toast = QLabel(self)
+        self.toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.toast.setStyleSheet("QLabel { color: white; background-color: rgba(60, 80, 110, 235);"
+                                 " border-radius: 14px; padding: 8px 18px; font-size: 13px; }")
+        self.toast.hide()
+        self._toast_timer = QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self.toast.hide)
+
         # Load csv list
         self.loader_threads = []
         self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'signature', 'content_hash', 'status'}}
+        self.saved_states = {}      # {csv_file_name: 저장된 분석상태} - 폴더 .viewer 에서 로드(각 CSV 최초 열람 시 hash 일치하면 적용)
+        self._skip_viewer = set()   # F5 강제 새로고침 대상(csv명) - 그 1회 재로드는 .viewer 자동복원을 건너뜀(raw 상태)
+        self._load_view_states()
         self.load_csv_list()
 
         # CSV List
@@ -220,6 +235,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 'Ctrl+C' Key Pressed -> Copy Selection
         elif event.key() == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.copy_selection()
+
+        # 'Ctrl+S' Key Pressed -> 현재 CSV 분석상태를 폴더 .viewer 에 저장
+        elif event.key() == Qt.Key.Key_S and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.save_view_state()
 
         # 'F5' Key Pressed -> list 포커스: 폴더 CSV 목록 갱신 / 그 외(table 등): 현재 CSV 데이터 갱신
         elif event.key() == Qt.Key.Key_F5:
@@ -446,6 +465,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.list_csv_names.clear()
         self.list_csv_names.blockSignals(False)
         self.cache.clear()
+        self._load_view_states()                                # 새 폴더의 .viewer 로드
         self.table_csv.setModel(None)
         self.load_csv_list()
         self.list_csv_names.scrollToTop()                       # 새 폴더 목록은 항상 맨 위부터
@@ -593,6 +613,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         self._close_ui_overlays()
         del self.cache[self.csv_file_name]
+        self._skip_viewer.add(self.csv_file_name)   # 이번 F5 재로드는 .viewer 없이 raw 상태로(완전 새로고침)
 
         self.table_csv.setModel(None)
         self._start_loading(self.csv_file_name)
@@ -644,6 +665,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         entry = self.cache.get(csv_file_name)
         if not entry or not entry['table_data']:
             self.table_csv.setModel(None)
+            self._skip_viewer.discard(csv_file_name)    # 빈/실패면 복원할 것도 없음 → F5 마크 정리(스테일 방지)
             if entry and entry['status'] == 'empty':
                 self._show_message("No Data")
             elif entry and entry['status'] == 'fail':
@@ -658,6 +680,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             model.load_fail.connect(self.csv_load_failed)
             proxy_model = CSVFilterProxyModel()
             proxy_model.setSourceModel(model)
+            self._apply_saved_state(csv_file_name, entry, proxy_model, model)   # .viewer 자동 복원(내용 해시 일치 시)
             entry['table_model'] = proxy_model
             self.table_csv.setModel(proxy_model)
 
@@ -864,6 +887,72 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 cell = (row, col)
         if self.border_delegate.set_search_mark(cell):
             self.table_csv.viewport().update()
+
+    # ---------- 분석상태 영속화(.viewer): Ctrl+S 저장 + 재진입 자동복원 ----------
+    def _load_view_states(self):
+        # 폴더의 .viewer 를 1회 읽어 메모리에 보관. 각 CSV 최초 모델 생성 시 hash 일치하면 적용.
+        self.saved_states = view_state.load_folder_states(self._folder()) if self.csv_folder_name else {}
+
+    def save_view_state(self):
+        # 현재 보고 있는 CSV의 분석상태(하이라이트·필터·Δ·열너비·스크롤)를 폴더 .viewer 에 저장.
+        # 'ok' 로 로드된 CSV만(빈/실패/미로드는 저장할 분석이 없음). 현재 CSV 한 개만 기록(다른 CSV 저장본 보존).
+        name = self.csv_file_name
+        entry = self.cache.get(name) if name else None
+        if not entry or entry.get('status') != 'ok' or not entry.get('table_model'):
+            return
+        proxy = entry['table_model']
+        source = proxy.sourceModel()
+        if source is None:
+            return
+        hdr = self.table_csv.horizontalHeader()
+        sig = entry.get('signature')
+        # 라이브 캡처: col_widths/scroll 은 cache가 'CSV 전환 시'에만 갱신되므로 저장 시점엔 뷰에서 직접 읽는다.
+        file_state = {
+            'csv_sha256': entry.get('content_hash'),
+            'csv_size':   sig[0] if sig else None,
+            'highlights': source.export_highlights(),
+            'col_widths': [hdr.sectionSize(c) for c in range(hdr.count())],
+            'scroll':     [self.table_csv.verticalScrollBar().value(),
+                           self.table_csv.horizontalScrollBar().value()],
+        }
+        file_state.update(proxy.export_state())     # column_filters, deltas
+        if view_state.save_file_state(self._folder(), name, file_state):
+            self.saved_states[name] = file_state     # 인메모리도 동기화(F5 재로드 시 일관)
+            self._show_toast("분석 결과를 저장했습니다")
+        else:
+            QMessageBox.warning(self, "Save Failed",
+                                "분석 결과(.viewer) 저장에 실패했습니다.\n폴더 쓰기 권한을 확인해 주세요.")
+
+    def _apply_saved_state(self, name, entry, proxy, source):
+        # 저장된 .viewer 상태가 '현재 파일 내용 해시'와 일치할 때만 복원(모델 생성 직후·뷰 부착 전).
+        # 순서: 필터·Δ 먼저 → 그 다음 하이라이트 → (이어서 update_table 이 col_widths → 스크롤 복원).
+        if name in self._skip_viewer:
+            self._skip_viewer.discard(name)     # F5 강제 새로고침 → 이번엔 .viewer 복원 건너뜀(raw 상태, 1회성)
+            return
+        saved = self.saved_states.get(name)
+        if not saved or saved.get('csv_sha256') != entry.get('content_hash'):
+            return
+        try:
+            proxy.restore_state(saved)                              # 열 값 필터 + Δ(Option2 재현)
+            source.restore_highlights(saved.get('highlights', {}))  # 셀 하이라이트(소스 좌표)
+            if saved.get('col_widths'):
+                entry['col_widths'] = list(saved['col_widths'])     # update_table 꼬리의 너비 복원이 사용
+            if saved.get('scroll'):
+                entry['last_view'] = tuple(saved['scroll'])         # update_table 꼬리의 스크롤 복원이 사용
+        except Exception as e:
+            # 저장본이 손상/구버전이어도 CSV 열람은 절대 막지 않음(부분 복원이라도 진행)
+            print(f"[ViewState] restore failed for '{name}': {e}")
+
+    def _show_toast(self, text, ms=1400):
+        # 짧은 알림(창 하단 중앙). ms 후 자동 숨김.
+        self.toast.setText(text)
+        self.toast.adjustSize()
+        x = (self.width() - self.toast.width()) // 2
+        y = self.height() - self.toast.height() - 40
+        self.toast.move(max(0, x), max(0, y))
+        self.toast.raise_()
+        self.toast.show()
+        self._toast_timer.start(ms)
 
     def closeEvent(self, event):
         # 진행 중인 로더 스레드 정리 (실행 중 GC로 인한 크래시 방지)

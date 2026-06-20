@@ -1,6 +1,8 @@
 from PyQt6.QtCore import QAbstractTableModel, pyqtSignal, Qt
 from PyQt6.QtGui import QBrush
 
+from utils.view_state import color_to_str, str_to_color
+
 class CSVTableModel(QAbstractTableModel):
     load_fail = pyqtSignal(str)  # (csv_path)
     def __init__(self, data, csv_path):
@@ -91,3 +93,43 @@ class CSVTableModel(QAbstractTableModel):
         top_left = self.index(min(source_rows), 0)
         bottom_right = self.index(max(source_rows), ncols - 1)
         self.dataChanged.emit(top_left, bottom_right, [Qt.ItemDataRole.BackgroundRole])
+
+    # ---------- 영속화(.viewer): 셀 하이라이트 ----------
+    def export_highlights(self):
+        """{(row,col): QColor} → {색문자열: {열: [행, ...]}} (색→열로 묶어 좌표쌍 반복 제거).
+        보통 행이 열보다 압도적으로 많아, 열 기준으로 행을 모으면 셀마다 반복되던 열 인덱스·
+        대괄호가 사라져 파일이 작아진다(구포맷 {색: [[row,col],...]} 대비 bulk 색칠에서 ~절반).
+        그룹화는 Ctrl+S/로드 때만 도는 O(셀 수) 1회 루프라 핫패스 아님 — 메모리 highlight_cells 는
+        O(1) 페인트를 위해 (row,col) 키를 그대로 유지하고, 이 포맷은 '저장용'으로만 쓴다."""
+        grouped = {}
+        for (row, col), color in self.highlight_cells.items():
+            grouped.setdefault(color_to_str(color), {}).setdefault(col, []).append(row)
+        return grouped
+
+    def restore_highlights(self, grouped):
+        """export_highlights 역(逆). 모델 생성 직후(뷰 부착 전) 호출 → dataChanged emit 불필요.
+        새 포맷 {색: {열: [행]}} 과 구포맷 {색: [[행,열], ...]} 을 모두 복원(이미 저장된 .viewer 하위호환).
+        열 키는 int 로 받는다(저장 직후 in-memory=int 키, 디스크 JSON 로드=str 키 둘 다 호환).
+        파일 범위를 벗어난 좌표는 무시(혹시 모를 불일치 방어)."""
+        cells = {}
+        nrows, ncols = len(self.rows), len(self.headers)
+        for hexstr, payload in (grouped or {}).items():
+            color = str_to_color(hexstr)
+            if isinstance(payload, dict):
+                # 새 포맷: {열: [행, ...]}
+                for col, rows in payload.items():
+                    try:
+                        c = int(col)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= c < ncols:
+                        for row in rows:
+                            if 0 <= row < nrows:
+                                cells[(row, c)] = color
+            else:
+                # 구포맷: [[행,열], ...]
+                for rc in payload:
+                    row, col = rc[0], rc[1]
+                    if 0 <= row < nrows and 0 <= col < ncols:
+                        cells[(row, col)] = color
+        self.highlight_cells = cells

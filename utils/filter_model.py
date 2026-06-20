@@ -1,6 +1,8 @@
 from PyQt6.QtCore import QAbstractProxyModel, QModelIndex, Qt
 from PyQt6.QtGui import QFont, QBrush, QColor
 
+from utils.view_state import color_to_str, str_to_color
+
 
 class CSVFilterProxyModel(QAbstractProxyModel):
     """열별 값 필터 프록시 (행 부분집합) + Δ(행간 차이) 가상 열.
@@ -47,6 +49,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._italic_font.setItalic(True)
         self._delta_color = {}            # {base_col: {source_row: QColor}} - Δ 셀 사용자 색칠(소스 셀이 없어 별도 저장)
         self._delta_prev = {}             # {base_col: {source_row: prev_source_row|None}} - 짝(스냅샷 시점 이전 보이는 행)
+        self._delta_snap_filter = {}      # {base_col: {src_col: frozenset}} - 스냅샷 당시 활성 '열 값 필터'(Option2 영속화: 멤버십의 '원인'만 저장)
         self._delta_first_bg = QBrush(QColor(236, 236, 236))   # 'R(n)-R(n-1)' 첫칸 옅은 회색 배경
         self._FIRST_LABEL = "r(n)-r(n-1)"  # Δ 첫 행 안내 문구(스냅샷·배경·표시 한 곳에서 참조)
 
@@ -66,6 +69,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self.delta_filters = {}
         self._delta_color = {}
         self._delta_prev = {}
+        self._delta_snap_filter = {}
         if model is not None:
             # QAbstractProxyModel 은 소스 시그널을 자동 전달하지 않으므로 직접 연결
             model.dataChanged.connect(self._on_source_data_changed)
@@ -279,6 +283,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return
         pos = self._src_to_pcol[src_col] + 1     # 기준 'src' 열 바로 오른쪽
         self._snapshot(src_col)                  # 현재 보이는 행 기준으로 1회 고정
+        self._delta_snap_filter[src_col] = dict(self.column_filters)   # Option2 영속화: 스냅샷 당시 열 값 필터 기록
         self.beginInsertColumns(QModelIndex(), pos, pos)
         self._delta_base.add(src_col)
         self._rebuild_columns()
@@ -294,6 +299,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             self._delta_snap.pop(src_col, None)
             self._delta_color.pop(src_col, None)
             self._delta_prev.pop(src_col, None)
+            self._delta_snap_filter.pop(src_col, None)
             self.delta_filters.pop(src_col, None)
             self._rebuild_columns()
             self._rebuild()
@@ -305,6 +311,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._delta_snap.pop(src_col, None)
         self._delta_color.pop(src_col, None)
         self._delta_prev.pop(src_col, None)
+        self._delta_snap_filter.pop(src_col, None)
         self._rebuild_columns()
         self.endRemoveColumns()
 
@@ -362,16 +369,21 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         return base
 
     def _snapshot(self, base):
-        """base 소스 열의 Δ 값을 '현재 보이는 행 순서'로 1회 계산해 고정.
-        첫 보이는 행=설명문구, 이후=직전 보이는 행과의 차. 짝(이전 소스행)도 _delta_prev 에 저장
-        (Δ 셀 선택 시 비교한 두 부모셀 테두리/툴팁용). 숨겨진 행은 미저장(=빈칸)."""
+        """현재 보이는 행(self._accepted) 기준으로 base 의 Δ 스냅샷을 고정."""
+        self._compute_snapshot(base, self._accepted)
+
+    def _compute_snapshot(self, base, accepted):
+        """accepted(보이는 source_row, 오름차순) 순서로 base 열의 Δ 값+짝을 1회 계산해 고정.
+        첫 보이는 행=설명문구, 이후=직전 보이는 행과의 차. 짝(이전 소스행)은 _delta_prev 에 저장
+        (Δ 셀 선택 시 비교한 두 부모셀 테두리/툴팁용). 숨겨진 행은 미저장(=빈칸).
+        ⚠ add_delta_column(현재 필터)과 restore_state(스냅샷 당시 필터 재구성)가 공유하는 단일 로직."""
         rows = self._src.rows
         snap = {}
         partner = {}
         prev = None
         prev_sr = None
         first = True
-        for sr in self._accepted:
+        for sr in accepted:
             cur = rows[sr][base]
             if first:
                 snap[sr] = self._FIRST_LABEL
@@ -533,3 +545,93 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         except (ValueError, TypeError):
             body = f"{cur} {self._format_delta(prev, cur)} {prev}"
         return f"row #{sr + 1} ↔ #{prev_sr + 1}{note}\n{body}"
+
+    # ---------- 영속화(.viewer): 사용자 입력만 추출/복원 (파생은 재계산) ----------
+    def export_state(self):
+        """저장용 상태(열 값 필터 + Δ 정의). 행 리스트 없이 '필터(원인)'만 → 18만 행도 수십 byte.
+        highlights/col_widths/scroll 은 뷰 소유라 GUI 가 따로 담는다.
+        반환: {'column_filters': [...], 'deltas': [...]} (JSON 직렬화 가능 평면 구조)."""
+        return {
+            "column_filters": [
+                {"col": col, "hidden": sorted(hidden)}
+                for col, hidden in self.column_filters.items()
+            ],
+            "deltas": [
+                {
+                    "base": base,
+                    # Option2: 스냅샷 당시 활성 '열 값 필터'(보통 빈 리스트). 멤버십의 '원인'만 저장 →
+                    # 재현 시 동일 파일에 다시 적용해 그때 보이던 행을 그대로 복원("필터 걸고 Δ" 까지 정확).
+                    "snapshot_filter": [
+                        {"col": c, "hidden": sorted(h)}
+                        for c, h in self._delta_snap_filter.get(base, {}).items()
+                    ],
+                    "filter_hidden": sorted(self.delta_filters[base]) if base in self.delta_filters else [],
+                    "colors": self._export_delta_colors(base),
+                }
+                for base in sorted(self._delta_base)
+            ],
+        }
+
+    def _export_delta_colors(self, base):
+        # {source_row: QColor} → {색문자열: [source_row, ...]} (색으로 그룹화)
+        grouped = {}
+        for sr, color in self._delta_color.get(base, {}).items():
+            grouped.setdefault(color_to_str(color), []).append(sr)
+        return grouped
+
+    def restore_state(self, state):
+        """export_state 역. 한 번의 reset 으로 열 값 필터 + Δ(Option2 재현)를 일괄 복원한다.
+        ⚠ Δ 멤버십은 저장된 snapshot_filter 를 동일 파일에 다시 적용해 재구성(행 리스트 미저장).
+           스냅샷 당시 *다른 Δ의 값 필터*까지 걸려 있던 극히 드문 경우는 열 값 필터만 반영된다(허용)."""
+        if self._src is None:
+            return
+        ncols = self._src.columnCount()
+        self.beginResetModel()
+        # 1) 열 값 필터
+        self.column_filters = {
+            f["col"]: frozenset(f["hidden"])
+            for f in state.get("column_filters", [])
+            if f.get("hidden") and isinstance(f.get("col"), int) and 0 <= f["col"] < ncols
+        }
+        # 2) Δ: snapshot_filter 로 보이던 행 재구성 → 스냅샷 재생 → Δ값 필터/색 복원
+        self._delta_base = set()
+        self._delta_snap = {}
+        self._delta_prev = {}
+        self.delta_filters = {}
+        self._delta_color = {}
+        self._delta_snap_filter = {}
+        for d in state.get("deltas", []):
+            base = d.get("base")
+            if not isinstance(base, int) or not (0 <= base < ncols):
+                continue
+            snap_filter = {
+                f["col"]: frozenset(f["hidden"])
+                for f in d.get("snapshot_filter", [])
+                if f.get("hidden") and isinstance(f.get("col"), int) and 0 <= f["col"] < ncols
+            }
+            self._delta_base.add(base)
+            self._delta_snap_filter[base] = snap_filter
+            self._compute_snapshot(base, self._accepted_for_filter(snap_filter))
+            if d.get("filter_hidden"):
+                self.delta_filters[base] = frozenset(d["filter_hidden"])
+            cmap = {}
+            for hexstr, srows in d.get("colors", {}).items():
+                color = str_to_color(hexstr)
+                for sr in srows:
+                    cmap[sr] = color
+            if cmap:
+                self._delta_color[base] = cmap
+        # 3) 열 레이아웃 + 통과 행 재계산
+        self._rebuild_columns()
+        self._rebuild()
+        self.endResetModel()
+
+    def _accepted_for_filter(self, snap_filter):
+        """주어진 열 값 필터를 통과하는 source_row 목록(오름차순). 이 앱은 정렬이 없어 보이는 행=오름차순이라
+        순서 저장이 불필요하고 멤버십만 재구성하면 된다. snap_filter 가 비면 전 행(range)."""
+        rows = self._src.rows
+        if not snap_filter:
+            return range(len(rows))
+        items = list(snap_filter.items())
+        return [i for i, row in enumerate(rows)
+                if all(row[col] not in hidden for col, hidden in items)]

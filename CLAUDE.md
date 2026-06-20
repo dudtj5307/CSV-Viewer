@@ -46,7 +46,8 @@ Project_CSV_Viewer/
 │   ├── table_model.py         # CSVTableModel (QAbstractTableModel)
 │   ├── filter_model.py        # CSVFilterProxyModel (열 필터 프록시 + Δ 가상 열)
 │   ├── search_model.py        # SearchModel (Ctrl+F 검색 로직)
-│   └── csv_loader.py          # CSVLoaderThread (비동기 CSV 로딩)
+│   ├── csv_loader.py          # CSVLoaderThread (비동기 CSV 로딩)
+│   └── view_state.py          # .viewer 영속화 (분석 결과 저장/로드, QColor↔문자열, 원자적 파일 IO)
 └── CSV/                       # 열람 대상 CSV 폴더들 (샘플/테스트 데이터)
 ```
 
@@ -87,6 +88,7 @@ csv_viewer.py main()
 | `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map) (아래 ⚠) |
 | `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
 | `CSVLoaderThread` | utils/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠). 캐시 무효화용 지문(`signature`=stat, `content_hash`=sha256)도 스레드에서 계산해 `t.signature/t.content_hash`로 노출 |
+| `view_state` (모듈) | utils/view_state.py | 분석 결과 영속화. `<CSV폴더>\.viewer`(폴더당 1 JSON)에 사용자 입력만 저장/로드. 원자적 쓰기(temp→os.replace)·머지, QColor↔'#rrggbb', envelope/version 게이트 (아래 ⚠ 변경 이력) |
 
 > **⚠ 선택 영역 검색(scoped search)**: Ctrl+F 검색은 **검색바를 열 때의 선택 상태**로 범위가 정해진다(`SearchModel.capture_scope`, `gui_viewer.search_gui_init`에서 호출). **열/행 '전체 선택'만** 범위로 인정하고, 셀 클릭·셀범위 드래그는 **전체검색**이 된다. 범위는 검색바가 닫힐 때까지 유지(sticky)되며 닫으면 `reset_scope`로 해제된다(검색어를 바꿔 재검색해도 범위 유지). 규칙: **헤더(행 -1)는 전체검색일 때만 포함**(범위검색 시 제외) · 열+행 동시 선택은 **합집합**(선택 열 OR 선택 행). placeholder는 범위검색이면 `"Search selected area"`, 전체면 `"Find Text (Enter)"`. ⚠ 범위는 *열 때* 캡처되므로 **열/행을 먼저 선택한 뒤 Ctrl+F** 해야 한다(검색바를 먼저 연 뒤 선택하면 범위 안 잡힘 → 다시 열어야 함).
 >
@@ -161,6 +163,17 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 ---
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
+
+- **분석 결과 저장/자동복원(`.viewer`)**: 하이라이트·열필터·Δ·열너비·스크롤을 **CSV 폴더당 1개 `<폴더>\.viewer`(JSON)** 에 Ctrl+S로 저장(현재 CSV 1개)했다가, 다음에 그 CSV를 **처음 열 때 내용 해시(csv_sha256)가 일치하면** 자동 복원. 신설 `utils/view_state.py`(폴더 파일 IO·QColor↔'#rrggbb'·envelope/version 게이트) + 모델 `export/restore` 메서드 + `gui_viewer`(Ctrl+S 바인딩·`_apply_saved_state`·저장 토스트).
+  - ⚠ **proxy/cache 통째 저장 안 함**: 모델 피클은 본문(18만 행) 중복+Qt 버전의존이라 금지. **사용자 입력만** 평면 JSON으로 추출하고 파생(`_accepted`·col_map·Δ값)은 동일 파일에서 재계산. 파일 본문 자체는 저장 안 함(해시로 동일성만 확인).
+  - ⚠ **하이라이트 저장 포맷 = 색→열→행(`{색: {열: [행]}}`), 메모리는 `{(행,열): 색}` 유지**: 보통 행이 열보다 압도적으로 많아 파일엔 열로 묶어 좌표쌍 `[행,열]` 반복을 없앤다(bulk 색칠 ~절반↓). 변환은 `export/restore_highlights`의 O(셀 수) 1회 루프(Ctrl+S·로드 때만 — 핫패스 아님). **⚠ 메모리 `highlight_cells`는 같은 구조로 바꾸지 말 것**: `data()`의 BackgroundRole이 스크롤마다 보이는 셀마다 `get((row,col))` **O(1)**로 색을 찾는 페인트 핫패스라, 색→열→행으로 바꾸면 '이 셀 무슨 색?'에 전 색의 행목록을 뒤져야(`row in [...]`) 18만 행 렌더가 느려진다 — **저장 포맷 ↔ 메모리 구조 분리가 핵심**. `restore_highlights`는 `int(col)`로 받아 in-memory(int 열키)·디스크 JSON(str 열키)·구포맷 `[[행,열],...]`(하위호환) 모두 처리. Δ색은 열 개념이 없어(`{색:[행]}`) 그대로 둠.
+  - ⚠ **Δ는 '행 리스트'가 아니라 '스냅샷 당시 열필터(원인)'만 저장(Option 2)**: snapshot_rows를 다 박으면 무필터 Δ는 `range(N)`=18만 정수(~1.2MB/Δ)라 무식 → 대신 `_delta_snap_filter[base]`(`add_delta_column` 시점의 `column_filters` 복사, 보통 빈 dict)만 저장하고, 복원 때 그 필터를 **같은 파일에 재적용→`_compute_snapshot`로 값 재생**. "필터 걸고 Δ vs 안 걸고 Δ"가 서로 다른 snapshot_filter로 저장돼 각각 정확히 재현. (정렬 기능이 없어 보이는 행=오름차순 → 순서 저장 불필요·멤버십만.) 한계: 스냅샷 당시 *다른 Δ의 값 필터*까지 걸렸던 극히 드문 경우는 열필터만 반영. (`_snapshot`은 `_compute_snapshot(self._accepted)` 위임 — add/restore 단일 로직.)
+  - ⚠ **복원 시점 = 모델 최초 생성 분기에서만**(`update_table` else, 뷰 부착 *전*). 그래야 세션 중 변경이 .viewer로 덮어써지지 않고(캐시 재사용 경로는 재적용 안 함), 하이라이트 `dataChanged` emit도 불필요. **순서: 필터·Δ(`restore_state`) → 하이라이트(`restore_highlights`) → col_widths → 스크롤** — 뒤 둘은 기존 `update_table` 꼬리가 cache의 `col_widths`/`last_view`를 읽어 처리하므로 `_apply_saved_state`가 그 두 키를 cache에 주입한다(Δ 복원 후라야 열 수가 맞아 `len==hdr.count()` 가드 통과).
+  - ⚠ **F5(표 포커스, `reload_current_csv`)는 .viewer를 의도적으로 건너뛴다 = raw 새로고침**: 현재 CSV만 캐시 폐기 후 **자동복원 없이** 다시 로드(사용자 요청). 구현은 `_skip_viewer`(csv명 set) — reload 시 add, `_apply_saved_state` 진입 즉시 그 이름이면 discard+return(1회성). 빈/실패 경로(`update_table`의 무데이터 early-return)에서도 discard해 스테일 마크 방지. **.viewer 파일 자체는 안 건드림**(다시 저장하려면 Ctrl+S). 비-F5 경로(첫 열람·새 창)는 그대로 자동복원. 리스트 포커스 F5(`reload_csv_list`)는 모델을 새로 안 만들어 .viewer와 무관(변경 없음).
+  - ⚠ **해시 비용 0**: loader가 로드 성공 시 이미 계산한 `content_hash` 재활용(저장=박기, 복원=비교)이라 GUI 스레드 재해싱 없음. `content_hash`는 status=='ok'에서만 생겨 '분석 있는 경우'와 일치.
+  - ⚠ **저장은 read-modify-write 머지**(`save_file_state`가 .viewer를 다시 읽어 현재 CSV 항목만 교체→원자적 재기록) → 다른 CSV 저장본 보존. col_widths/scroll은 cache가 'CSV 전환 시'에만 갱신되므로 **저장 시점엔 뷰에서 직접 캡처**. 깨진/구버전 .viewer는 envelope·version 게이트 + 복원 `try/except`로 조용히 무시(**CSV 열람 절대 안 막음**). `.viewer`/`.viewer-*.tmp`는 `.csv`로 안 끝나 목록·F5에서 제외. 다중 프로세스 동시편집은 사용자 합의로 배제(머지·원자적 쓰기로 부분 안전).
+  - ⚠ **JSON 포맷 = 커스텀 `_pretty`**(구조는 들여쓰고 *잎 배열은 한 줄*): `json.dump(indent=2)`로 바꾸지 말 것 — 잎 배열이 원소당 한 줄로 터져 가독성↓ + 값별 행 색칠(수만 행)이 파일을 수십 배로 부풀린다. 규칙: dict와 '원소가 dict인 목록(column_filters/deltas)'만 줄바꿈, 스칼라 리스트(highlights의 행목록·hidden·col_widths·scroll)는 compact 한 줄. ⚠ **dict 키는 `json.dumps(str(k))`로 직접 문자열화** — highlights 새 포맷의 '열' 키가 int라, 표준 `json.dump`(자동)와 달리 커스텀 프린터는 수동 변환해야 유효 JSON 키(`"5":`)가 된다(안 그러면 `5:`로 깨짐). 표준 JSON이라 `json.load` 그대로 읽힘.
+  - ⚠ 검증: offscreen 유닛 7(필터+하이라이트 라운드트립〔색→열→행 포맷·구포맷 하위호환·int/str 열키·범위밖 무시·폴더왕복〕·Option2 Δ→필터·필터→Δ·Δ색/Δ필터·파일머지·깨진파일·JSON 전과정) + 통합 3(로드→분석→Ctrl+S 기록·새 창 자동복원·해시불일치 차단) PASS. **저장 토스트/하이라이트 *렌더*는 offscreen 미검증 → 실Windows 육안 최종.**
 
 - **전체검색 시작 위치 = 내 현재 위치(앵커)부터**: Ctrl+F 전체검색이 항상 1/N부터 시작하던 것을, 일반 에디터처럼 **내 위치 이상인 첫 매치(예: 103/200)부터** 시작하도록(`search_model.search`의 `current_index=0`을 분기). **범위검색은 그대로 1/N**, 전체검색만 `bisect_left(matches, anchor)`. **앵커 = 마지막 선택(현재) 셀이 유효하면 그 (행,열), 없으면 화면 최상단 보이는 행(열=0)** (`_anchor_rowcol`; 사용자 합의 — *가시성 체크 없이 선택 셀 우선*). `matches`가 (row,col) 오름차순이라 **튜플 비교가 곧 '행 우선·열 다음'** → bisect O(log N), 헤더 매치(-1,*)는 앵커행(≥0)보다 작아 자동 제외. 앵커 **'이상(>=)'**이라 자기 셀이 매치면 포함(같은 검색어 Enter 재검색은 idempotent, 전진은 F3 — 기존 Enter=재검색/F3=다음 동작 유지). 매치를 다 지나쳤으면 1번으로 wrap. ⚠ 느린 `selectedRows()/selectedColumns()` 안 쓰고 `currentIndex()`+`rowAt(0)` O(1)만(CLAUDE.md 선택 API 함정 회피). 검증: offscreen 6케이스(선택셀 시작·열우선·끝에서 wrap·범위검색 무시·무선택 fallback·앵커값) PASS. `search_model.py`만 변경.
 
