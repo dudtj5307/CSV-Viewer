@@ -1,5 +1,6 @@
 import os
 import time
+import hashlib
 from bisect import bisect_right
 
 from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect
@@ -89,7 +90,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Load csv list
         self.loader_threads = []
-        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'status'}}
+        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'signature', 'content_hash', 'status'}}
         self.load_csv_list()
 
         # CSV List
@@ -325,6 +326,46 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 특정 CSV 파일의 전체 경로 (표시명 + .csv)
         return os.path.join(self.csv_folder_path, self.csv_folder_name, csv_file_name + ".csv")
 
+    def _stat_sig(self, csv_file_name):
+        # 파일 메타데이터 지문 (size, mtime_ns). 재진입 신선도 1차 게이트(≈0.007ms). 접근 불가 시 None.
+        try:
+            s = os.stat(self._file_path(csv_file_name))
+        except OSError:
+            return None
+        return (s.st_size, s.st_mtime_ns)
+
+    def _content_hash(self, csv_file_name):
+        # 파일 내용 해시(sha256). size 같고 mtime만 다른 드문 경우의 타이브레이커로만 호출.
+        h = hashlib.sha256()
+        try:
+            with open(self._file_path(csv_file_name), 'rb') as f:
+                for chunk in iter(lambda: f.read(1 << 20), b''):
+                    h.update(chunk)
+        except OSError:
+            return None
+        return h.hexdigest()
+
+    def _cache_is_fresh(self, csv_file_name):
+        # 캐시된 CSV가 디스크 파일과 같은지 판정 (다른 CSV 보다 돌아올 때마다 호출).
+        #  1) stat(size+mtime_ns) 같으면 신선 — 해시 안 함 (절대다수 경로, ≈7µs, 파일 크기 무관).
+        #  2) size 다르면 내용도 무조건 다름 → 해시 생략하고 폐기.
+        #  3) size 같고 mtime만 다르면 그때만 내용 해시 비교: 같으면(touch/동일 재저장) 캐시 유지+sig 갱신, 다르면 폐기.
+        entry = self.cache[csv_file_name]
+        old_sig = entry.get('signature')
+        new_sig = self._stat_sig(csv_file_name)
+        if old_sig is None or new_sig is None:
+            return False                        # 기준 없음 또는 파일 접근 불가 → 안전하게 재로드
+        if new_sig == old_sig:
+            return True                         # 메타데이터 동일 → 신선
+        if new_sig[0] != old_sig[0]:
+            return False                        # size 다름 → 내용 변경 확정 → 폐기
+        old_hash = entry.get('content_hash')
+        new_hash = self._content_hash(csv_file_name)
+        if old_hash is not None and new_hash is not None and new_hash == old_hash:
+            entry['signature'] = new_sig        # 내용 동일(메타만 변경) → sig 갱신해 다음 재진입은 빠른 경로로
+            return True
+        return False
+
     def _set_path_fields(self):
         # edit_csv_path = 상위 경로, edit_csv_path2 = 폴더명
         self.edit_csv_path.setText(self.csv_folder_path)
@@ -420,7 +461,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def _ensure_cache(self, csv_file_name):
         if csv_file_name not in self.cache:
-            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None, 'col_widths': None, 'status': None}
+            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None, 'col_widths': None,
+                                         'signature': None, 'content_hash': None, 'status': None}
         return self.cache[csv_file_name]
 
     def _center_spinner(self):
@@ -464,10 +506,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._start_spinner()
         self.paint_list_csv(csv_file_name, (255, 255, 225))  # Yellow
         thread = CSVLoaderThread(self._file_path(csv_file_name))
-        # 로더는 전체 경로로 읽고, 콜백엔 파일명(식별자)을 넘긴다
-        thread.load_complete.connect(lambda path, data, n=csv_file_name: self.csv_load_complete(n, data))
-        thread.load_failed.connect(lambda path, n=csv_file_name: self.csv_load_failed(n))
-        thread.load_empty.connect(lambda path, n=csv_file_name: self.csv_load_empty(n))
+        # 로더는 전체 경로로 읽고, 콜백엔 파일명(식별자) + 캐시 무효화용 지문(signature/content_hash)을 넘긴다.
+        # t.signature/t.content_hash 는 run() 종료(emit) 시점에 세팅돼 있으므로 큐드 슬롯에서 읽어도 안전.
+        thread.load_complete.connect(lambda path, data, n=csv_file_name, t=thread: self.csv_load_complete(n, data, t.signature, t.content_hash))
+        thread.load_failed.connect(lambda path, n=csv_file_name, t=thread: self.csv_load_failed(n, t.signature))
+        thread.load_empty.connect(lambda path, n=csv_file_name, t=thread: self.csv_load_empty(n, t.signature))
         thread.finished.connect(lambda t=thread: self._cleanup_loader(t))
         self.loader_threads.append(thread)     # 실행 중 참조 유지 (조기 GC 방지)
         thread.start()
@@ -496,7 +539,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.csv_file_name = current.text()
 
         if self.csv_file_name in self.cache:
-            self.update_table(self.csv_file_name)
+            if self._cache_is_fresh(self.csv_file_name):
+                self.update_table(self.csv_file_name)
+            else:
+                # 디스크 파일이 캐시된 내용과 달라짐 → 그 CSV의 캐시(필터/하이라이트/Δ/스크롤 등) 전부 폐기 후 새로 로드
+                del self.cache[self.csv_file_name]
+                self._start_loading(self.csv_file_name)
         else:
             self._start_loading(self.csv_file_name)
 
@@ -549,30 +597,36 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.table_csv.setModel(None)
         self._start_loading(self.csv_file_name)
 
-    def csv_load_complete(self, csv_file_name, data):
-        # Save in cache
+    def csv_load_complete(self, csv_file_name, data, signature=None, content_hash=None):
+        # Save in cache (signature/content_hash = 재진입 시 변경 감지용 지문)
         entry = self._ensure_cache(csv_file_name)
         entry['table_data'] = data
+        entry['signature'] = signature
+        entry['content_hash'] = content_hash
         entry['status'] = 'ok'
         self.update_table(csv_file_name)
         self.paint_list_csv(csv_file_name, (230, 255, 230))  # Green
 
-    def csv_load_empty(self, csv_file_name):
+    def csv_load_empty(self, csv_file_name, signature=None):
         # 디코딩은 됐지만 데이터 행이 없음 -> No Data
         entry = self._ensure_cache(csv_file_name)
         entry['table_data'] = None
+        entry['signature'] = signature          # 빈 파일도 sig 기록 → 안 바뀌면 재진입 시 불필요한 재로드 방지
+        entry['content_hash'] = None
         entry['status'] = 'empty'
         self.update_table(csv_file_name)
         self.paint_list_csv(csv_file_name, (220, 220, 220))  # Gray
 
-    def csv_load_failed(self, csv_file_name):
+    def csv_load_failed(self, csv_file_name, signature=None):
         # 파일이 사라져서 실패한 경우 -> 목록을 동기화해 없어진 항목 정리 (디코딩 실패는 기존대로 표시)
         if not os.path.isfile(self._file_path(csv_file_name)):
             self.reload_csv_list()
             return
-        # Save in cache
+        # Save in cache (디코딩 실패: sig 기록 → 파일이 바뀌면 재진입 시 재시도, 그대로면 재시도 안 함)
         entry = self._ensure_cache(csv_file_name)
         entry['table_data'] = None
+        entry['signature'] = signature
+        entry['content_hash'] = None
         entry['status'] = 'fail'
         self.update_table(csv_file_name)
         self.paint_list_csv(csv_file_name, (255, 230, 230))  # Red

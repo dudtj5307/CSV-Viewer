@@ -1,4 +1,6 @@
 import csv
+import os
+import hashlib
 from PyQt6.QtCore import QThread, pyqtSignal
 
 # 긴 DATA 필드(기본 131072자 초과) 대비 — csv.Error 'field larger than field limit' 방지
@@ -12,8 +14,32 @@ class CSVLoaderThread(QThread):
     def __init__(self, csv_path):
         super().__init__()
         self.csv_path = csv_path
+        # 캐시 무효화용 지문: signature=(size, mtime_ns) 빠른 게이트 · content_hash=내용 타이브레이커.
+        # 콜백(GUI 스레드)이 emit 뒤 t.signature/t.content_hash 로 읽어 캐시에 저장한다(참조 안전).
+        self.signature = None
+        self.content_hash = None
+
+    def _stat_sig(self):
+        # 메타데이터 지문(0.007ms). 파일이 사라졌으면 None.
+        try:
+            s = os.stat(self.csv_path)
+        except OSError:
+            return None
+        return (s.st_size, s.st_mtime_ns)
+
+    def _hash_content(self):
+        # 내용 해시(sha256). 재진입 시 size 같고 mtime만 다를 때만 비교에 쓰이는 baseline.
+        h = hashlib.sha256()
+        try:
+            with open(self.csv_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(1 << 20), b''):
+                    h.update(chunk)
+        except OSError:
+            return None
+        return h.hexdigest()
 
     def run(self):
+        self.signature = self._stat_sig()             # 시작 시 1회(7µs) — 성공/빈/실패 공통
         for encode_type in ['utf-8-sig', 'cp949']:    # utf-8-sig: BOM 자동 제거(없어도 일반 UTF-8처럼 동작)
             try:
                 with open(self.csv_path, newline='', encoding=encode_type) as csvfile:
@@ -45,6 +71,7 @@ class CSVLoaderThread(QThread):
                 if len(row) < width:
                     row.extend([""] * (width - len(row)))
 
+            self.content_hash = self._hash_content()    # 성공 시에만 baseline 해시 계산(빈/실패는 None)
             self.load_complete.emit(self.csv_path, data)
             print(f"[Loader] Success opening '{self.csv_path}' with {encode_type}")
             return
