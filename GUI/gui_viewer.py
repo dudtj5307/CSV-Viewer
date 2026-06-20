@@ -85,7 +85,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Load csv list
         self.loader_threads = []
-        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view'}}
+        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'status'}}
         self.load_csv_list()
 
         # CSV List
@@ -416,7 +416,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def _ensure_cache(self, csv_file_name):
         if csv_file_name not in self.cache:
-            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None, 'status': None}
+            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None, 'col_widths': None, 'status': None}
         return self.cache[csv_file_name]
 
     def _center_spinner(self):
@@ -480,6 +480,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             v = self.table_csv.verticalScrollBar().value()
             h = self.table_csv.horizontalScrollBar().value()
             prev['last_view'] = (v, h)
+            # 열 너비도 per-CSV로 저장 (last_view 와 동일 범주의 뷰 상태). O(열 수)라 행 수 무관.
+            hdr = self.table_csv.horizontalHeader()
+            prev['col_widths'] = [hdr.sectionSize(c) for c in range(hdr.count())]
 
         self._close_ui_overlays()
 
@@ -604,6 +607,15 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
         self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
+
+        # Set Column Widths (per-CSV) - 저장된 너비가 있으면 복원.
+        # ⚠ 가로 스크롤(last_view)보다 먼저 적용해야 너비가 바꾼 스크롤 범위에 값이 클램프되지 않는다.
+        # ⚠ 길이 가드 = Δ 열 안전장치(열 수 불일치 시 기본값 80 유지). 저장값 없으면(첫 열람) 기본값 그대로.
+        hdr = self.table_csv.horizontalHeader()
+        col_widths = entry['col_widths']
+        if col_widths and len(col_widths) == hdr.count():
+            for c, w in enumerate(col_widths):
+                hdr.resizeSection(c, w)
 
         # Set Last View (ScrollBar)
         last_view = entry['last_view']
