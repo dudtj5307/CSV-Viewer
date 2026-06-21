@@ -578,9 +578,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                                          'signature': None, 'content_hash': None, 'status': None}
         return self.cache[csv_file_name]
 
-    def _scan_overrides(self, header, default):
+    def _scan_overrides(self, header):
         # 헤더에서 '기본값과 다른' 섹션만 {인덱스: 크기} sparse 로 추출(열너비/행높이 공용).
+        # ⚠ 기준은 하드코딩(80/20)이 아니라 header.defaultSectionSize() — 미수정 섹션은 정의상 이 값을
+        #   반환한다. 행 기본높이가 폰트/스타일 최소치로 클램프돼 20이 아니어도(예: 30) '안 바뀐 행'을 안
+        #   저장한다. (하드코딩 20 이면 클램프된 기본행이 전부 '변경됨'으로 잡혀 .viewer 에 모든 행이 저장되던 버그.)
         # 한 번 스캔(섹션당 O(1)) — CSV 전환·Ctrl+S 같은 사용자 액션에서만 호출(핫패스 아님).
+        default = header.defaultSectionSize()
         out = {}
         for i in range(header.count()):
             s = header.sectionSize(i)
@@ -653,8 +657,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             prev['last_view'] = (v, h)
             # 열너비·행높이도 per-CSV 저장(last_view 와 동일 범주). 기본값과 다른 것만 sparse {인덱스:크기}.
             # 열은 수 적어 항상 스캔, 행은 _rows_dirty 일 때만(아니면 18만 행 스캔 회피).
-            prev['col_widths'] = self._scan_overrides(self.table_csv.horizontalHeader(), 80)
-            prev['row_heights'] = self._scan_overrides(self.table_csv.verticalHeader(), 20) if self._rows_dirty else {}
+            prev['col_widths'] = self._scan_overrides(self.table_csv.horizontalHeader())
+            prev['row_heights'] = self._scan_overrides(self.table_csv.verticalHeader()) if self._rows_dirty else {}
 
         self._close_ui_overlays()
 
@@ -1037,9 +1041,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             'csv_sha256': entry.get('content_hash'),
             'csv_size':   sig[0] if sig else None,
             'highlights': source.export_highlights(),
-            'col_widths': view_state.pack_sizes(self._scan_overrides(hdr, 80)),
+            'col_widths': view_state.pack_sizes(self._scan_overrides(hdr)),
             'row_heights': view_state.pack_sizes(
-                self._scan_overrides(self.table_csv.verticalHeader(), 20) if self._rows_dirty else {}),
+                self._scan_overrides(self.table_csv.verticalHeader()) if self._rows_dirty else {}),
             'scroll':     [self.table_csv.verticalScrollBar().value(),
                            self.table_csv.horizontalScrollBar().value()],
         }
@@ -1179,10 +1183,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         vhdr = self.table_csv.verticalHeader()
         n = vhdr.count()
         if rows is None:
+            default = vhdr.defaultSectionSize()           # 하드코딩 20 아닌 실제 기본높이(클램프 대응)
             if self._rows_dirty:                          # 현재 오버라이드가 있을 때만 청소(대용량 무필요 스캔 회피)
                 for r in range(n):
-                    if vhdr.sectionSize(r) != 20:
-                        vhdr.resizeSection(r, 20)
+                    if vhdr.sectionSize(r) != default:
+                        vhdr.resizeSection(r, default)
                 self._rows_dirty = False
             return
         if len(rows) == n:                                # 길이 불일치(필터 어긋남)면 미적용(안전장치)

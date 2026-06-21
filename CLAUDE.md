@@ -171,6 +171,7 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
   - ⚠ **왜 그룹(`{크기:[인덱스]}`)이냐**: `_pretty` 가 잎 배열을 한 줄로 유지하므로 다중선택 동기조정으로 **수만 행을 같은 높이로 바꿔도 파일이 안 부푼다**(평면 `{인덱스:크기}` 면 수만 줄). 같은 크기끼리 묶음.
   - ⚠ **구포맷(v1 배열) 하위호환**: `unpack_sizes` 가 `col_widths` 가 list(`[80,200,...]`)면 위치=인덱스로 흡수(기존 `.viewer` 그대로 읽힘). `SCHEMA_VERSION` 1→2(게이트 아님·정보용).
   - ⚠ **cache 통일 + Δ 안전**: `col_widths`/`row_heights` 모두 cache 에 `{인덱스:크기}` sparse 저장. `update_table` 은 **범위 내 인덱스만** `resizeSection`(기존 `len==count` 길이가드 제거 → Δ 열 수 불일치도 자연 안전). `clicked_csv_list` 가 전환 시 `_scan_overrides` 로 캡처(행은 `_rows_dirty` 일 때만 → 18만 행 무필요 스캔 회피).
+  - ⚠ **'안 바뀐 것' 기준 = `header.defaultSectionSize()`(하드코딩 80/20 아님)**: `_scan_overrides` 가 미수정 섹션 판정을 **실제 기본섹션크기**와 비교한다. 행 기본높이는 폰트/스타일 최소치로 **클램프돼 20이 아닐 수 있어**(예: 30), 하드코딩 20 과 비교하면 **안 바뀐 행이 전부 '변경됨'으로 잡혀 .viewer 에 모든 행이 저장되던 버그**가 있었다(열은 80 이라 클램프 없어 멀쩡했음 → 행만 터짐). 미수정 섹션은 정의상 `defaultSectionSize()` 를 반환하므로 그 값과 비교하면 클램프와 무관하게 정확. reset 의 행높이 기본복원(`_restore_row_heights`)도 동일하게 `defaultSectionSize()` 사용.
   - ⚠ **행 좌표 = 보이는(proxy) 행 위치**: 저장/복원 모두 필터 적용 후의 보이는 행 인덱스 기준(`restore_state` → 보이는 행 수 일치 → positional 적용). Memento 행 복원과 동일 원리.
   - ⚠ 검증: offscreen — pack/unpack(그룹·구배열·빈), 저장→`{"200":[1]}`/`{"45":[2]}`·version 2, 새 창 재로드 복원(열·행), 구포맷 배열 읽기, CSV 전환 cache parity, reset/undo 회귀 모두 PASS. **저장/복원 렌더는 offscreen 미검증 → 실Windows 육안 최종.**
 
