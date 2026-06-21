@@ -490,6 +490,10 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             bases.add(base)
         self._emit_delta_bg(bases)
 
+    def has_delta_colors(self):
+        """Δ 셀 사용자 색칠이 하나라도 있는지 (전체 해제 no-op 판정용)."""
+        return bool(self._delta_color)
+
     def clear_all_delta_colors(self):
         """모든 Δ 셀 색칠 해제 (소스 모델의 '전체 해제'와 짝)."""
         if not self._delta_color:

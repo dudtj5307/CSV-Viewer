@@ -176,6 +176,8 @@ class FilterHeaderView(QHeaderView):
         if self.parent.frame_search.isVisible():
             self.parent.search_model.search(self.parent.edit_text_input.text())
 
+        self.parent.record_history({'fd'})      # 필터 적용 = 1 히스토리 단계
+
     def clear_filter(self):
         # 엑셀 "Clear Filter From [Column]" - 이 열 필터를 한 번에 완전 해제 (Δ 열이면 Δ값 필터)
         proxy_model = self.table_view.model()
@@ -190,6 +192,8 @@ class FilterHeaderView(QHeaderView):
         if self.parent.frame_search.isVisible():
             self.parent.search_model.search(self.parent.edit_text_input.text())
 
+        self.parent.record_history({'fd'})      # 필터 완전 해제 = 1 히스토리 단계
+
     def paint_value(self, value, color):
         # 이 열에서 value를 가진 모든 소스 행의 셀 전체를 color로 칠한다 (Δ 열이면 Δ값 기준).
         # 행 목록은 색 선택 시점에 1회 스캔(lazy). 색칠은 소스 모델의 highlight_cells에 직접 기록.
@@ -203,8 +207,11 @@ class FilterHeaderView(QHeaderView):
             source_rows = proxy_model.source_rows_with_delta_value(self.source_col, value)
         else:
             source_rows = proxy_model.source_rows_with_value(self.source_col, value)
+        if not source_rows:
+            return                                             # 해당 값 행 없음 → 기록 안 함
         source_model.highlight_rows(color, source_rows)        # 실제 열 셀
         proxy_model.color_delta_rows(color, source_rows)       # Δ 열 셀도 동일하게
+        self.parent.record_history({'highlights', 'fd'})       # 수만 행 한꺼번에 칠해도 1단계(루프 밖 1회)
 
     def add_delta(self):
         # 일반 열의 ☰🡫Δ -> source_col 오른쪽에 Δ 열 추가(현재 보이는 행 기준 스냅샷)
@@ -212,6 +219,7 @@ class FilterHeaderView(QHeaderView):
         if proxy_model is None:
             return
         proxy_model.add_delta_column(self.source_col)
+        self.parent.record_history({'fd', 'widths'})   # 열 삽입 → 열 수 변동이라 widths 도 같이(record 가 디바운스 흡수)
         self.filter_popup.close()        # 결과(추가된 Δ 열)를 바로 보이도록 팝업 닫기
         self._refresh_search_if_open()
 
@@ -221,6 +229,7 @@ class FilterHeaderView(QHeaderView):
         if proxy_model is None:
             return
         proxy_model.remove_delta_column(self.source_col)
+        self.parent.record_history({'fd', 'widths'})   # 열 제거 → 열 수 변동이라 widths 도 같이
         self.filter_popup.close()
         self._refresh_search_if_open()
 

@@ -175,7 +175,7 @@ class Ui_ViewerWindow(object):
         self.frame_2.setObjectName("frame_2")
         self.button_yellow = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_yellow.setEnabled(True)
-        self.button_yellow.setGeometry(QtCore.QRect(259, 29, 39, 19))
+        self.button_yellow.setGeometry(QtCore.QRect(322, 29, 39, 19))
         self.button_yellow.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(255, 247, 1);\n"
 "    border: 1px solid black;\n"
@@ -198,7 +198,7 @@ class Ui_ViewerWindow(object):
         self.button_yellow.setObjectName("button_yellow")
         self.button_green = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_green.setEnabled(True)
-        self.button_green.setGeometry(QtCore.QRect(299, 29, 39, 19))
+        self.button_green.setGeometry(QtCore.QRect(362, 29, 39, 19))
         self.button_green.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(0, 255, 60);\n"
 "    border: 1px solid black;\n"
@@ -221,7 +221,7 @@ class Ui_ViewerWindow(object):
         self.button_green.setObjectName("button_green")
         self.button_blue = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_blue.setEnabled(True)
-        self.button_blue.setGeometry(QtCore.QRect(339, 29, 39, 19))
+        self.button_blue.setGeometry(QtCore.QRect(402, 29, 39, 19))
         self.button_blue.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(0, 89, 255);\n"
 "    border: 1px solid black;\n"
@@ -244,7 +244,7 @@ class Ui_ViewerWindow(object):
         self.button_blue.setObjectName("button_blue")
         self.button_white = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_white.setEnabled(True)
-        self.button_white.setGeometry(QtCore.QRect(179, 29, 39, 19))
+        self.button_white.setGeometry(QtCore.QRect(242, 29, 39, 19))
         self.button_white.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
 "    border: 1px solid black;\n"
@@ -267,7 +267,7 @@ class Ui_ViewerWindow(object):
         self.button_white.setObjectName("button_white")
         self.button_red = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_red.setEnabled(True)
-        self.button_red.setGeometry(QtCore.QRect(219, 29, 39, 19))
+        self.button_red.setGeometry(QtCore.QRect(282, 29, 39, 19))
         self.button_red.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(223, 20, 23);\n"
 "    border: 1px solid black;\n"
@@ -289,7 +289,7 @@ class Ui_ViewerWindow(object):
         self.button_red.setObjectName("button_red")
         self.button_none = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_none.setEnabled(True)
-        self.button_none.setGeometry(QtCore.QRect(157, 29, 20, 20))
+        self.button_none.setGeometry(QtCore.QRect(220, 29, 20, 20))
         font = QtGui.QFont()
         font.setBold(True)
         self.button_none.setFont(font)
@@ -316,7 +316,7 @@ class Ui_ViewerWindow(object):
         self.button_none.setObjectName("button_none")
         self.button_more = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_more.setEnabled(True)
-        self.button_more.setGeometry(QtCore.QRect(419, 29, 39, 19))
+        self.button_more.setGeometry(QtCore.QRect(482, 29, 39, 19))
         self.button_more.setStyleSheet("QPushButton {\n"
 "    background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0.8,\n"
 "        stop:0 #FF0000, stop:0.25 #FF7F00, stop:0.40 #FFFF00,\n"
@@ -406,7 +406,7 @@ class Ui_ViewerWindow(object):
         self.button_csv_folder.setObjectName("button_csv_folder")
         self.button_purple = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_purple.setEnabled(True)
-        self.button_purple.setGeometry(QtCore.QRect(379, 29, 39, 19))
+        self.button_purple.setGeometry(QtCore.QRect(442, 29, 39, 19))
         self.button_purple.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(200, 50, 200);\n"
 "    border: 1px solid black;\n"
@@ -450,6 +450,50 @@ class Ui_ViewerWindow(object):
 "    padding-left: 2px;\n"
 "}")
         self.edit_csvname_find.setObjectName("edit_csvname_find")
+        self.button_undo = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_undo.setEnabled(True)
+        self.button_undo.setGeometry(QtCore.QRect(157, 28, 30, 20))
+        self.button_undo.setStyleSheet("QPushButton {\n"
+"    background-color: rgba(230, 230, 230,0);\n"
+"    border-radius: 5px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 2px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"     border: 2px solid #000;\n"
+"    background-color: lightgray;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_undo.setText("")
+        self.button_undo.setObjectName("button_undo")
+        self.button_redo = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_redo.setEnabled(True)
+        self.button_redo.setGeometry(QtCore.QRect(187, 28, 30, 20))
+        self.button_redo.setStyleSheet("QPushButton {\n"
+"    background-color: rgba(230, 230, 230,0);\n"
+"    border-radius: 5px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 2px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"     border: 2px solid #000;\n"
+"    background-color: lightgray;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_redo.setText("")
+        self.button_redo.setObjectName("button_redo")
         self.gridLayout_3.addWidget(self.frame_2, 0, 0, 1, 1)
         self.frame = QtWidgets.QFrame(parent=self.centralwidget)
         self.frame.setStyleSheet("border: 0px;")

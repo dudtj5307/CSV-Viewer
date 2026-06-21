@@ -350,7 +350,7 @@ background-color: rgba(253, 253, 253, 0);</string>
        </property>
        <property name="geometry">
         <rect>
-         <x>259</x>
+         <x>322</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -386,7 +386,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>299</x>
+         <x>362</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -422,7 +422,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>339</x>
+         <x>402</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -458,7 +458,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>179</x>
+         <x>242</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -494,7 +494,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>219</x>
+         <x>282</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -529,7 +529,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>157</x>
+         <x>220</x>
          <y>29</y>
          <width>20</width>
          <height>20</height>
@@ -576,7 +576,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>419</x>
+         <x>482</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -719,7 +719,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>379</x>
+         <x>442</x>
          <y>29</y>
          <width>39</width>
          <height>19</height>
@@ -801,6 +801,76 @@ QPushButton:disabled {
     border-radius: 1px;
 	padding-left: 2px;
 }</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="button_undo">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
+       <property name="geometry">
+        <rect>
+         <x>157</x>
+         <y>28</y>
+         <width>30</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: rgba(230, 230, 230,0);
+    border-radius: 5px;
+}
+
+QPushButton:hover {
+	border: 2px solid #333;
+}
+
+QPushButton:pressed {
+ 	border: 2px solid #000;
+    background-color: lightgray;
+}
+
+QPushButton:disabled {
+    color: rgb(200,200,200);
+}</string>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="button_redo">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
+       <property name="geometry">
+        <rect>
+         <x>187</x>
+         <y>28</y>
+         <width>30</width>
+         <height>20</height>
+        </rect>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">QPushButton {
+    background-color: rgba(230, 230, 230,0);
+    border-radius: 5px;
+}
+
+QPushButton:hover {
+	border: 2px solid #333;
+}
+
+QPushButton:pressed {
+ 	border: 2px solid #000;
+    background-color: lightgray;
+}
+
+QPushButton:disabled {
+    color: rgb(200,200,200);
+}</string>
+       </property>
+       <property name="text">
+        <string/>
        </property>
       </widget>
      </widget>

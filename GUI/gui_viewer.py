@@ -4,13 +4,14 @@ import hashlib
 from bisect import bisect_right
 
 from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect
-from PyQt6.QtGui import QIcon, QBrush, QColor, QMovie
+from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie
 from PyQt6.QtCore import Qt, QTimer, QSize
 
 from utils.table_model import CSVTableModel
 from utils.filter_model import CSVFilterProxyModel
 from utils.csv_loader import CSVLoaderThread
 from utils.search_model import SearchModel
+from utils.edit_history import EditHistory, Memento
 from utils import view_state
 
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
@@ -24,6 +25,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
     # ESC 연타로 창 닫기: 첫 ESC 후 이 시간(초) 이내 다시 누르면 닫힘.
     # ESC 안내 토스트가 떠 있는 시간도 동일 값으로 묶는다(연타 유효 시간 = 안내 노출 시간).
     ESC_INTERVAL_SEC = 0.5
+
+    # Undo/Redo(Ctrl+Z/Ctrl+Y): CSV별로 되돌릴 수 있는 최대 '액션' 수 (baseline 제외).
+    MAX_UNDO_STEPS = 20
 
     def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
@@ -162,6 +166,36 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.button_more.clicked.connect(self.pick_custom_color)
         self.last_custom_color = QColor(255, 255, 0)   # 커스텀 색 대화상자 초기값(최근 선택 기억)
 
+        # ---------- Undo / Redo (Ctrl+Z / Ctrl+Y) ----------
+        # 분석 편집(하이라이트·필터·Δ·열너비)을 CSV별 독립 스택(cache['history'])에 '액션 단위'로 기록.
+        # 스냅샷은 .viewer 직렬화(export_*)를 재사용하고, 안 바뀐 슬라이스는 참조 공유(COW)한다.
+        self._suppress_width_record = False    # 프로그램적 너비변경(모델부착·복원) 중엔 기록 안 함(아래 함정 참고)
+        self.table_csv.horizontalHeader().sectionResized.connect(self._on_section_resized)
+        # 열너비 드래그는 연속 신호(sectionResized) → 디바운스로 '드래그 1제스처 = 1 히스토리'로 묶는다.
+        # (여러 열을 동시에 늘려도 신호가 여러 번 나지만 이 타이머가 모두 흡수 → 1단계)
+        self._width_timer = QTimer(self)
+        self._width_timer.setSingleShot(True)
+        self._width_timer.setInterval(350)
+        self._width_timer.timeout.connect(lambda: self.record_history({'widths'}))
+
+        # Undo/Redo 버튼: 활성/비활성 전용 아이콘 4종을 미리 만들어 두고, _update_undo_buttons 가
+        # 현재 CSV 히스토리(can_undo/can_redo)에 따라 enabled + 아이콘을 교체한다.
+        # ⚠ 비활성 버튼은 Qt 가 아이콘을 Disabled 모드로 '한 번 더' 흐리게 렌더 → 전용 disable 이미지를
+        #   그 모드에 직접 등록해 추가 페이드 없이 그림 그대로 보이게 한다(안 그러면 이중으로 흐려짐).
+        def _disabled_icon(fn):
+            pm = QPixmap(os.path.join(self.icon_path, fn))
+            ic = QIcon()
+            ic.addPixmap(pm, QIcon.Mode.Disabled)
+            ic.addPixmap(pm, QIcon.Mode.Normal)
+            return ic
+        self._icon_undo = QIcon(os.path.join(self.icon_path, "button_undo.png"))
+        self._icon_redo = QIcon(os.path.join(self.icon_path, "button_redo.png"))
+        self._icon_undo_off = _disabled_icon("button_undo_disable.png")
+        self._icon_redo_off = _disabled_icon("button_redo_disable.png")
+        self.button_undo.clicked.connect(self.undo)
+        self.button_redo.clicked.connect(self.redo)
+        self._update_undo_buttons()        # 초기 상태(모델 없음 → 비활성 + disable 아이콘) 반영
+
 
     def _apply_highlight(self, color):
         # color: QColor 적용 / None 이면 전체 해제
@@ -171,9 +205,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             return
         source_model = proxy_model.sourceModel()
         if color is None:                       # button_none = 전체 해제 (소스 + Δ)
+            had = bool(source_model.highlight_cells) or proxy_model.has_delta_colors()
             source_model.highlight_cell(None, [])
             proxy_model.clear_all_delta_colors()
             self.table_csv.clearSelection()
+            if had:                             # 칠해진 게 있었을 때만 1단계 기록(빈 상태 해제는 no-op)
+                self.record_history({'highlights', 'fd'})
             return
         # 선택 셀을 실제 셀(소스)과 Δ 셀로 분리. Δ 셀은 소스가 없어 프록시에 (기준열, 소스행)으로 저장.
         accepted = proxy_model.accepted_rows()
@@ -186,9 +223,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 si = proxy_model.mapToSource(pi)
                 if si.isValid():
                     source_indexes.append(si)
+        if not source_indexes and not delta_targets:
+            return                              # 색칠 대상 없음(빈 선택) → 기록 안 함
         source_model.highlight_cell(color, source_indexes)
         proxy_model.set_delta_cell_colors(color, delta_targets)
         self.table_csv.clearSelection()
+        self.record_history({'highlights', 'fd'})   # 여러 셀이라도 1단계(루프 밖, 꼬리 1회)
 
     def highlight_cell(self, event=None):
         # 프리셋 버튼 -> objectName 으로 색 결정
@@ -238,6 +278,16 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 'Ctrl+S' Key Pressed -> 현재 CSV 분석상태를 폴더 .viewer 에 저장
         elif event.key() == Qt.Key.Key_S and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.save_view_state()
+
+        # 'Ctrl+Z' Key Pressed -> Undo (분석 편집 되돌리기)
+        elif event.key() == Qt.Key.Key_Z and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.undo()
+
+        # 'Ctrl+Y' or 'Ctrl+Shift+Z' Key Pressed -> Redo (다시 실행)
+        elif (event.key() == Qt.Key.Key_Y and event.modifiers() == Qt.KeyboardModifier.ControlModifier) \
+             or (event.key() == Qt.Key.Key_Z
+                 and event.modifiers() == (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)):
+            self.redo()
 
         # 'F5' Key Pressed -> list 포커스: 폴더 CSV 목록 갱신 / 그 외(table 등): 현재 CSV 데이터 갱신
         elif event.key() == Qt.Key.Key_F5:
@@ -466,12 +516,18 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.cache.clear()
         self._load_view_states()                                # 새 폴더의 .viewer 로드
         self.table_csv.setModel(None)
+        self._update_undo_buttons()                             # 폴더 변경 → 히스토리 없음(버튼 비활성)
         self.load_csv_list()
         self.list_csv_names.scrollToTop()                       # 새 폴더 목록은 항상 맨 위부터
         self.list_csv_names.horizontalScrollBar().setValue(0)   # 가로 스크롤도 초기화
         self.edit_csvname_find.clear()                          # 새 폴더 -> 이름 검색 초기화
 
     def _close_ui_overlays(self):
+        # CSV 전환/폴더변경 직전: 디바운스 대기 중인 너비변경이 있으면 '아직 현재인' 이 CSV 에 먼저 확정
+        # (record_history 는 _current_edit_entry=현재 CSV 기준 → 전환 전이라 올바른 CSV 에 기록).
+        if self._width_timer.isActive():
+            self._width_timer.stop()
+            self.record_history({'widths'})
         self.search_gui_hide()
         self._hide_message()
         header = self.table_csv.horizontalHeader()
@@ -522,6 +578,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def _start_loading(self, csv_file_name):
         self.table_csv.setModel(None)   # table_csv 초기화
+        self._update_undo_buttons()     # 로딩 중엔 모델 없음 → undo/redo 비활성(완료 시 update_table 이 재반영)
         self._start_spinner()
         self.paint_list_csv(csv_file_name, (255, 255, 225))  # Yellow
         thread = CSVLoaderThread(self._file_path(csv_file_name))
@@ -602,6 +659,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self._close_ui_overlays()
             self._stop_spinner()
             self.table_csv.setModel(None)
+            self._update_undo_buttons()         # 보던 CSV 삭제 → 모델 없음(버튼 비활성)
 
         # 검색칸에 입력이 있으면 갱신된 목록에도 동일 필터 재적용
         self._filter_csv_list(self.edit_csvname_find.text())
@@ -669,7 +727,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 self._show_message("No Data")
             elif entry and entry['status'] == 'fail':
                 self._show_message("Loading Fail")
+            self._update_undo_buttons()     # 모델 없음 → undo/redo 비활성
             return
+
+        # 모델 부착·기본너비·너비복원 동안 발생하는 sectionResized 는 '프로그램적'이라 undo 기록 대상 아님
+        self._suppress_width_record = True
 
         # Look if there is model already created
         if entry['table_model']:
@@ -697,6 +759,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             for c, w in enumerate(col_widths):
                 hdr.resizeSection(c, w)
 
+        self._width_timer.stop()                 # 셋업 중 시작됐을 수 있는 디바운스 취소
+        self._suppress_width_record = False      # 여기부터의 너비변경(=사용자 드래그)만 기록 대상
+        self._ensure_baseline_history(entry)     # 모델 최초 표시 직후 baseline 1개 생성(이미 있으면 보존)
+
         # Set Last View (ScrollBar)
         last_view = entry['last_view']
         if last_view:
@@ -704,6 +770,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self.table_csv.horizontalScrollBar().setValue(last_view[1])
         else:
             self.table_csv.scrollTo(self.table_csv.model().index(0, 0), QAbstractItemView.ScrollHint.PositionAtTop)
+
+        self._update_undo_buttons()         # CSV 표시 직후: 이 CSV 히스토리 기준으로 버튼 상태 반영
 
     def _wire_selection_signals(self):
         # selectionModel 은 setModel 마다 새로 생긴다 → 그때 Δ 비교 테두리 핸들러를 (재)연결.
@@ -940,6 +1008,112 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         except Exception as e:
             # 저장본이 손상/구버전이어도 CSV 열람은 절대 막지 않음(부분 복원이라도 진행)
             print(f"[ViewState] restore failed for '{name}': {e}")
+
+    # ---------- Undo / Redo (Ctrl+Z / Ctrl+Y) — CSV별 독립 스택 ----------
+    def _current_edit_entry(self):
+        # 기록/되돌리기가 가능한 '현재 CSV' cache 엔트리(ok 로드 + 모델). 아니면 None.
+        name = self.csv_file_name
+        entry = self.cache.get(name) if name else None
+        if not entry or entry.get('status') != 'ok' or not entry.get('table_model'):
+            return None
+        return entry
+
+    def _capture_slice(self, entry, slice_name):
+        # 한 슬라이스만 라이브 모델/뷰에서 새로 추출 (.viewer 직렬화 형식 그대로 재사용).
+        proxy = entry['table_model']
+        if slice_name == 'highlights':
+            return proxy.sourceModel().export_highlights()
+        if slice_name == 'fd':
+            return proxy.export_state()
+        hdr = self.table_csv.horizontalHeader()      # 'widths'
+        return [hdr.sectionSize(c) for c in range(hdr.count())]
+
+    def _make_memento(self, entry, changed, prev):
+        # COW: changed 에 든 슬라이스만 새로 추출, 나머지는 prev(직전 Memento)의 객체를 참조 그대로 재사용.
+        #      prev=None(baseline)이면 셋 다 새로 추출. (Memento 의 값은 불변 취급이라 참조 공유가 안전)
+        def take(name):
+            if prev is None or name in changed:
+                return self._capture_slice(entry, name)
+            return getattr(prev, name)
+        return Memento(take('highlights'), take('fd'), take('widths'))
+
+    def record_history(self, changed):
+        # 사용자 액션 '꼬리'에서 1회만 호출(셀/열 루프 안 금지 → 일괄 변경도 1단계). changed=바뀐 슬라이스 집합.
+        entry = self._current_edit_entry()
+        if entry is None:
+            return
+        hist = entry.get('history')
+        if hist is None:
+            return                          # baseline 아직 없음(모델 표시 전) → 기록 스킵
+        if 'widths' in changed:
+            self._width_timer.stop()        # 명시적 너비 기록 시 보류 중 디바운스는 흡수(중복 단계 방지)
+        hist.push(self._make_memento(entry, changed, hist.current()))
+        self._update_undo_buttons()         # 새 액션 → undo 가능 + redo 가지 폐기(redo 버튼 비활성)
+
+    def _ensure_baseline_history(self, entry):
+        # 모델 최초 표시 직후(너비/스크롤 복원까지 끝난 시점) baseline 1개로 히스토리 생성.
+        # 이미 있으면(캐시 재사용 경로) 건드리지 않아 세션 편집을 보존한다.
+        if entry.get('history') is None:
+            entry['history'] = EditHistory(self._make_memento(entry, None, None), cap=self.MAX_UNDO_STEPS)
+
+    def undo(self):
+        entry = self._current_edit_entry()
+        hist = entry.get('history') if entry else None
+        m = hist.undo() if hist else None
+        if m is not None:
+            self._restore_memento(entry, m)
+        self._update_undo_buttons()
+
+    def redo(self):
+        entry = self._current_edit_entry()
+        hist = entry.get('history') if entry else None
+        m = hist.redo() if hist else None
+        if m is not None:
+            self._restore_memento(entry, m)
+        self._update_undo_buttons()
+
+    def _restore_memento(self, entry, m):
+        # .viewer 자동복원과 동일 경로: highlights(소스) → state(프록시 reset) → 너비. 그 후 마크/검색 정리.
+        proxy = entry['table_model']
+        source = proxy.sourceModel()
+        if source is None:
+            return
+        self._suppress_width_record = True       # 아래 resizeSection 이 sectionResized 를 다시 emit → 재귀 기록 방지
+        try:
+            source.restore_highlights(m.highlights)   # dict 교체(emit 없음)
+            proxy.restore_state(m.fd)                  # reset → 새 하이라이트·열·필터로 보이는 셀 전체 리페인트
+            hdr = self.table_csv.horizontalHeader()
+            if m.widths and len(m.widths) == hdr.count():
+                for c, w in enumerate(m.widths):
+                    hdr.resizeSection(c, w)
+        finally:
+            self._suppress_width_record = False
+        # Δ/검색 비교 테두리는 좌표가 어긋날 수 있어 초기화
+        self.border_delegate.set_marks(None, None)
+        self.border_delegate.set_search_mark(None)
+        self.table_csv.viewport().update()
+        # 행 집합이 바뀌었을 수 있으니 검색바가 열려 있으면 재검색(apply_filter 와 동일 패턴)
+        if self.frame_search.isVisible():
+            self.search_model.search(self.edit_text_input.text())
+
+    def _on_section_resized(self, _idx, _old, _new):
+        # 사용자 열너비 드래그 → 디바운스 후 1회 기록. 프로그램적 변경(모델부착·복원)은 억제 플래그로 무시.
+        if self._suppress_width_record:
+            return
+        if self._current_edit_entry() is None:
+            return
+        self._width_timer.start()
+
+    def _update_undo_buttons(self):
+        # 현재 CSV 히스토리에 따라 undo/redo 버튼 활성/비활성 + 아이콘 교체 (모델/히스토리 없으면 둘 다 비활성).
+        entry = self._current_edit_entry()
+        hist = entry.get('history') if entry else None
+        can_undo = bool(hist) and hist.can_undo()
+        can_redo = bool(hist) and hist.can_redo()
+        self.button_undo.setEnabled(can_undo)
+        self.button_redo.setEnabled(can_redo)
+        self.button_undo.setIcon(self._icon_undo if can_undo else self._icon_undo_off)
+        self.button_redo.setIcon(self._icon_redo if can_redo else self._icon_redo_off)
 
     def _show_toast(self, text, ms=1400, success=True):
         # 짧은 알림(table_csv 오른쪽 위 구석, 네모 박스). 성공=초록 / 실패=빨강. ms 후 자동 숨김.
