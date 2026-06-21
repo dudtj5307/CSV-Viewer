@@ -5,7 +5,7 @@ from bisect import bisect_right
 
 from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect
 from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
 
 from utils.table_model import CSVTableModel
 from utils.filter_model import CSVFilterProxyModel
@@ -177,6 +177,21 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._width_timer.setSingleShot(True)
         self._width_timer.setInterval(350)
         self._width_timer.timeout.connect(lambda: self.record_history({'widths'}))
+
+        # ---------- 엑셀형 다중선택 동시조정 (열너비 / 행높이) ----------
+        # 다중 선택(완전 선택된 열 N개 또는 행 N개) 중 하나의 경계를 드래그하면, 손을 떼는 순간(release)에
+        # 나머지 선택분이 같은 크기로 스냅된다. 드래그 중엔 잡은 하나만 실시간(=Qt 기본), 종료 시 일괄 적용.
+        #  - 열: 기존 너비 저장/Undo 그대로(전파 후 위 _width_timer 가 피어 포함 1단계로 기록).
+        #  - 행: 세션 한정(저장·Undo 없음) — verticalHeader 의 sectionResized 만 추적해 전파.
+        # release 감지는 두 헤더의 viewport 에 설치한 eventFilter 가 담당(QHeaderView 엔 'resize 종료'
+        # 신호가 없음). ⚠ QHeaderView 는 QAbstractScrollArea 라 마우스 이벤트는 헤더 객체가 아니라 그
+        # viewport() 로 전달된다 → 반드시 viewport 에 필터를 걸어야 release 를 받는다(헤더에 걸면 안 옴).
+        self._propagating = False      # 동시조정 전파 중 — 전파가 다시 쏘는 sectionResized 재귀/재기록 차단
+        self._pending_h = None         # 드래그 중인 (열, 새너비). release 때 나머지 선택 열에 전파 후 None
+        self._pending_v = None         # 드래그 중인 (행, 새높이). release 때 나머지 선택 행에 전파 후 None
+        self.table_csv.verticalHeader().sectionResized.connect(self._on_row_resized)
+        self.table_csv.horizontalHeader().viewport().installEventFilter(self)
+        self.table_csv.verticalHeader().viewport().installEventFilter(self)
 
         # Undo/Redo 버튼: 활성/비활성 전용 아이콘 4종을 미리 만들어 두고, _update_undo_buttons 가
         # 현재 CSV 히스토리(can_undo/can_redo)에 따라 enabled + 아이콘을 교체한다.
@@ -1096,13 +1111,86 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if self.frame_search.isVisible():
             self.search_model.search(self.edit_text_input.text())
 
-    def _on_section_resized(self, _idx, _old, _new):
-        # 사용자 열너비 드래그 → 디바운스 후 1회 기록. 프로그램적 변경(모델부착·복원)은 억제 플래그로 무시.
-        if self._suppress_width_record:
+    def _on_section_resized(self, idx, _old, new):
+        # 사용자 열너비 드래그 → 디바운스 후 1회 기록. 프로그램적 변경(모델부착·복원)은 억제 플래그로,
+        # 동시조정 전파로 인한 재귀 신호는 _propagating 으로 무시한다.
+        if self._suppress_width_record or self._propagating:
             return
         if self._current_edit_entry() is None:
             return
+        self._pending_h = (idx, new)     # release 때 나머지 선택 열에 전파할 대상/크기
         self._width_timer.start()
+
+    def _on_row_resized(self, idx, _old, new):
+        # 사용자 행높이 드래그 → release 때 나머지 선택 행에 전파(세션 한정: 기록/저장 없음).
+        if self._suppress_width_record or self._propagating:
+            return
+        self._pending_v = (idx, new)
+
+    def eventFilter(self, obj, event):
+        # 두 헤더 viewport 의 마우스 release 를 잡아 '드래그 종료 시 일괄 적용'을 트리거(QHeaderView 엔
+        # 종료 신호 없음). ⚠ 마우스 이벤트는 헤더가 아니라 viewport 로 오므로 obj 도 viewport 와 비교한다.
+        # singleShot(0) 으로 헤더 자체 release 처리 직후 실행(=최종 크기 확정 후). _pending_* 가 없으면 no-op
+        # 라 단순 헤더 클릭/우클릭(우클릭=필터 팝업)엔 영향 없다.
+        if (event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton):
+            if obj is self.table_csv.horizontalHeader().viewport():
+                QTimer.singleShot(0, lambda: self._finalize_resize(True))
+            elif obj is self.table_csv.verticalHeader().viewport():
+                QTimer.singleShot(0, lambda: self._finalize_resize(False))
+        return super().eventFilter(obj, event)
+
+    def _finalize_resize(self, horizontal):
+        # 드래그 종료: 잡았던 섹션이 '다중 완전선택'의 일원이면 나머지를 같은 크기로 맞춘다(엑셀 동작).
+        # 열은 전파 후 _width_timer 가 잠시 뒤 1단계로 기록(피어 포함), 행은 세션 한정이라 기록/저장 없음.
+        if horizontal:
+            pending, self._pending_h = self._pending_h, None
+        else:
+            pending, self._pending_v = self._pending_v, None
+        if pending is None:
+            return
+        idx, new = pending
+        sections = self._full_selection_sections(horizontal)
+        if len(sections) < 2 or idx not in sections:
+            return                       # 단일/비선택 섹션 드래그 → 전파 없음(엑셀 동일)
+        hdr = self.table_csv.horizontalHeader() if horizontal else self.table_csv.verticalHeader()
+        self._propagating = True         # 아래 resizeSection 이 쏘는 sectionResized 는 위 핸들러에서 무시됨
+        hdr.setUpdatesEnabled(False)     # 대량(행 전체선택=수만) 전파 시 매 섹션 repaint thrash 차단 → 끝나고 1회 갱신
+        try:
+            for s in sections:
+                if s != idx:
+                    hdr.resizeSection(s, new)
+        finally:
+            hdr.setUpdatesEnabled(True)
+            self._propagating = False
+
+    def _full_selection_sections(self, horizontal):
+        # 선택에서 '완전히 선택된' 열(horizontal=True) 또는 행 집합을 selection 범위 분석으로 구한다.
+        # ⚠ selectedColumns()/selectedRows()는 18만 행 열/행 전체선택 시 수 초 → 금지. range 직접 분석으로
+        #   판정한다(search_model.capture_scope·copy_selection 과 동일 철학, _spans_cover 재사용 → O(range)).
+        sel = self.table_csv.selectionModel()
+        model = self.table_csv.model()
+        if sel is None or model is None:
+            return set()
+        row_count, col_count = model.rowCount(), model.columnCount()
+        ranges = [(r.top(), r.bottom(), r.left(), r.right()) for r in sel.selection()]
+        if horizontal:
+            # 열 전체 선택: 그 열을 덮는 (쪼개졌을 수 있는) 행 구간들이 [0, row_count-1]를 모두 덮으면 그 열
+            cols = set()
+            for c in range(col_count):
+                spans = [(t, b) for (t, b, l, r) in ranges if l <= c <= r]
+                if spans and self._spans_cover(spans, row_count):
+                    cols.add(c)
+            return cols
+        # 행 전체 선택: 행 경계로 밴드를 나눠, 밴드를 덮는 range들의 열 구간이 모든 열을 덮으면 그 밴드의 행들
+        rows = set()
+        bounds = sorted({x for (t, b, _, _) in ranges for x in (t, b + 1) if 0 <= x <= row_count})
+        for i in range(len(bounds) - 1):
+            a, b = bounds[i], bounds[i + 1]
+            spans = [(l, r) for (t, bot, l, r) in ranges if t <= a and bot >= b - 1]
+            if spans and self._spans_cover(spans, col_count):
+                rows.update(range(a, b))
+        return rows
 
     def _update_undo_buttons(self):
         # 현재 CSV 히스토리에 따라 undo/redo 버튼 활성/비활성 + 아이콘 교체 (모델/히스토리 없으면 둘 다 비활성).
