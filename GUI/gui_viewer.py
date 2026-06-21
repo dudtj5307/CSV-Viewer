@@ -105,7 +105,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Load csv list
         self.loader_threads = []
-        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'signature', 'content_hash', 'status'}}
+        self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'row_heights', 'signature', 'content_hash', 'status'}}
         self.saved_states = {}      # {csv_file_name: 저장된 분석상태} - 폴더 .viewer 에서 로드(각 CSV 최초 열람 시 hash 일치하면 적용)
         self._load_view_states()
         self.load_csv_list()
@@ -573,9 +573,20 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     def _ensure_cache(self, csv_file_name):
         if csv_file_name not in self.cache:
-            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None, 'col_widths': None,
+            self.cache[csv_file_name] = {'table_model': None, 'table_data': None, 'last_view': None,
+                                         'col_widths': None, 'row_heights': None,
                                          'signature': None, 'content_hash': None, 'status': None}
         return self.cache[csv_file_name]
+
+    def _scan_overrides(self, header, default):
+        # 헤더에서 '기본값과 다른' 섹션만 {인덱스: 크기} sparse 로 추출(열너비/행높이 공용).
+        # 한 번 스캔(섹션당 O(1)) — CSV 전환·Ctrl+S 같은 사용자 액션에서만 호출(핫패스 아님).
+        out = {}
+        for i in range(header.count()):
+            s = header.sectionSize(i)
+            if s != default:
+                out[i] = s
+        return out
 
     def _center_spinner(self):
         vp = self.table_csv.viewport()
@@ -640,9 +651,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             v = self.table_csv.verticalScrollBar().value()
             h = self.table_csv.horizontalScrollBar().value()
             prev['last_view'] = (v, h)
-            # 열 너비도 per-CSV로 저장 (last_view 와 동일 범주의 뷰 상태). O(열 수)라 행 수 무관.
-            hdr = self.table_csv.horizontalHeader()
-            prev['col_widths'] = [hdr.sectionSize(c) for c in range(hdr.count())]
+            # 열너비·행높이도 per-CSV 저장(last_view 와 동일 범주). 기본값과 다른 것만 sparse {인덱스:크기}.
+            # 열은 수 적어 항상 스캔, 행은 _rows_dirty 일 때만(아니면 18만 행 스캔 회피).
+            prev['col_widths'] = self._scan_overrides(self.table_csv.horizontalHeader(), 80)
+            prev['row_heights'] = self._scan_overrides(self.table_csv.verticalHeader(), 20) if self._rows_dirty else {}
 
         self._close_ui_overlays()
 
@@ -790,12 +802,19 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Set Column Widths (per-CSV) - 저장된 너비가 있으면 복원.
         # ⚠ 가로 스크롤(last_view)보다 먼저 적용해야 너비가 바꾼 스크롤 범위에 값이 클램프되지 않는다.
-        # ⚠ 길이 가드 = Δ 열 안전장치(열 수 불일치 시 기본값 80 유지). 저장값 없으면(첫 열람) 기본값 그대로.
+        # 저장 포맷 = sparse {인덱스:크기}(기본값과 다른 것만) → 범위 내 인덱스만 적용(Δ 열 수 불일치도 안전).
         hdr = self.table_csv.horizontalHeader()
-        col_widths = entry['col_widths']
-        if col_widths and len(col_widths) == hdr.count():
-            for c, w in enumerate(col_widths):
+        for c, w in (entry.get('col_widths') or {}).items():
+            if 0 <= c < hdr.count():
                 hdr.resizeSection(c, w)
+        # 행높이도 동일 복원(열과 parity). 적용되면 _rows_dirty=True → baseline 이 행높이를 스냅샷에 포함.
+        vhdr = self.table_csv.verticalHeader()
+        row_heights = entry.get('row_heights') or {}
+        for r, h in row_heights.items():
+            if 0 <= r < vhdr.count():
+                vhdr.resizeSection(r, h)
+        if row_heights:
+            self._rows_dirty = True
 
         self._width_timer.stop()                 # 셋업 중 시작됐을 수 있는 디바운스 취소
         self._height_timer.stop()                # 행높이 디바운스도 동일
@@ -1012,12 +1031,15 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             return
         hdr = self.table_csv.horizontalHeader()
         sig = entry.get('signature')
-        # 라이브 캡처: col_widths/scroll 은 cache가 'CSV 전환 시'에만 갱신되므로 저장 시점엔 뷰에서 직접 읽는다.
+        # 라이브 캡처: 크기/스크롤은 cache가 'CSV 전환 시'에만 갱신되므로 저장 시점엔 뷰에서 직접 읽는다.
+        # 열너비·행높이는 기본값과 다른 것만 {크기:[인덱스]} 그룹으로(행은 _rows_dirty 일 때만 스캔).
         file_state = {
             'csv_sha256': entry.get('content_hash'),
             'csv_size':   sig[0] if sig else None,
             'highlights': source.export_highlights(),
-            'col_widths': [hdr.sectionSize(c) for c in range(hdr.count())],
+            'col_widths': view_state.pack_sizes(self._scan_overrides(hdr, 80)),
+            'row_heights': view_state.pack_sizes(
+                self._scan_overrides(self.table_csv.verticalHeader(), 20) if self._rows_dirty else {}),
             'scroll':     [self.table_csv.verticalScrollBar().value(),
                            self.table_csv.horizontalScrollBar().value()],
         }
@@ -1037,8 +1059,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         try:
             proxy.restore_state(saved)                              # 열 값 필터 + Δ(Option2 재현)
             source.restore_highlights(saved.get('highlights', {}))  # 셀 하이라이트(소스 좌표)
-            if saved.get('col_widths'):
-                entry['col_widths'] = list(saved['col_widths'])     # update_table 꼬리의 너비 복원이 사용
+            entry['col_widths'] = view_state.unpack_sizes(saved.get('col_widths'), 80)    # sparse {인덱스:너비}(구포맷 배열도 흡수)
+            entry['row_heights'] = view_state.unpack_sizes(saved.get('row_heights'), 20)  # sparse {인덱스:높이}
             if saved.get('scroll'):
                 entry['last_view'] = tuple(saved['scroll'])         # update_table 꼬리의 스크롤 복원이 사용
         except Exception as e:
