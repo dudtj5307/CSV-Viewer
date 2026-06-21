@@ -523,13 +523,13 @@ QPushButton:disabled {
         <string/>
        </property>
       </widget>
-      <widget class="QPushButton" name="button_none">
+      <widget class="QPushButton" name="button_reset">
        <property name="enabled">
         <bool>true</bool>
        </property>
        <property name="geometry">
         <rect>
-         <x>220</x>
+         <x>156</x>
          <y>29</y>
          <width>20</width>
          <height>20</height>
@@ -653,6 +653,11 @@ QLineEdit:pressed {
          <width>51</width>
          <height>20</height>
         </rect>
+       </property>
+       <property name="font">
+        <font>
+         <fontweight>DemiBold</fontweight>
+        </font>
        </property>
        <property name="styleSheet">
         <string notr="true">QPushButton {
@@ -809,7 +814,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>157</x>
+         <x>179</x>
          <y>28</y>
          <width>30</width>
          <height>20</height>
@@ -818,15 +823,15 @@ QPushButton:disabled {
        <property name="styleSheet">
         <string notr="true">QPushButton {
     background-color: rgba(230, 230, 230,0);
-    border-radius: 5px;
+    border-radius: 4px;
 }
 
 QPushButton:hover {
-	border: 2px solid #333;
+	border: 1px solid #333;
 }
 
 QPushButton:pressed {
- 	border: 2px solid #000;
+ 	border: 1px solid #000;
     background-color: lightgray;
 }
 
@@ -844,7 +849,7 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>187</x>
+         <x>209</x>
          <y>28</y>
          <width>30</width>
          <height>20</height>
@@ -853,15 +858,15 @@ QPushButton:disabled {
        <property name="styleSheet">
         <string notr="true">QPushButton {
     background-color: rgba(230, 230, 230,0);
-    border-radius: 5px;
+    border-radius: 4px;
 }
 
 QPushButton:hover {
-	border: 2px solid #333;
+	border: 1px solid #333;
 }
 
 QPushButton:pressed {
- 	border: 2px solid #000;
+ 	border: 1px solid #000;
     background-color: lightgray;
 }
 

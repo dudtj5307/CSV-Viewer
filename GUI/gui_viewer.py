@@ -55,7 +55,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.table_csv.setStyleSheet("QTableView { background-color: white; }")
         self.table_csv.verticalHeader().setStyleSheet("QHeaderView::section:vertical { background-color: rgb(240, 240, 240); }")
 
-        self.button_none.setIcon(QIcon(os.path.join(self.icon_path, "button_none.png")))
+        self.button_reset.setIcon(QIcon(os.path.join(self.icon_path, "button_reset.png")))
         self.button_csv_folder.setIcon(QIcon(os.path.join(self.icon_path, "button_csv_folder_raw.png")))
 
         # CSV 경로 표시 (edit_csv_path=상위 경로 / edit_csv_path2=폴더명) + 폴더 변경 버튼
@@ -107,9 +107,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.loader_threads = []
         self.cache = {}     # {csv_file_name: {'table_model', 'table_data', 'last_view', 'col_widths', 'signature', 'content_hash', 'status'}}
         self.saved_states = {}      # {csv_file_name: 저장된 분석상태} - 폴더 .viewer 에서 로드(각 CSV 최초 열람 시 hash 일치하면 적용)
-        self._skip_viewer = set()   # F5 강제 새로고침 대상(csv명) - 그 1회 재로드는 .viewer 자동복원을 건너뜀(raw 상태)
         self._load_view_states()
         self.load_csv_list()
+
 
         # CSV List
         self.list_csv_names.currentItemChanged.connect(self.clicked_csv_list)
@@ -153,7 +153,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Cell Highlight - 프리셋 색 (objectName -> QColor / None=해제)
         self.highlight_colors = {
-            'button_none':   None,
             'button_white':  QColor("white"),
             'button_red':    QColor(255, 150, 150),
             'button_yellow': QColor(255, 250, 150),
@@ -164,10 +163,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         for btn_name in self.highlight_colors:
             getattr(self, btn_name).clicked.connect(self.highlight_cell)
         self.button_more.clicked.connect(self.pick_custom_color)
+        self.button_reset.clicked.connect(self.reset_analysis)   # 전체 분석 초기화(하이라이트·필터·Δ·열너비·행높이 → 기본값, 가역)
         self.last_custom_color = QColor(255, 255, 0)   # 커스텀 색 대화상자 초기값(최근 선택 기억)
 
         # ---------- Undo / Redo (Ctrl+Z / Ctrl+Y) ----------
-        # 분석 편집(하이라이트·필터·Δ·열너비)을 CSV별 독립 스택(cache['history'])에 '액션 단위'로 기록.
+        # 분석 편집(하이라이트·필터·Δ·열너비·행높이)을 CSV별 독립 스택(cache['history'])에 '액션 단위'로 기록.
         # 스냅샷은 .viewer 직렬화(export_*)를 재사용하고, 안 바뀐 슬라이스는 참조 공유(COW)한다.
         self._suppress_width_record = False    # 프로그램적 너비변경(모델부착·복원) 중엔 기록 안 함(아래 함정 참고)
         self.table_csv.horizontalHeader().sectionResized.connect(self._on_section_resized)
@@ -177,6 +177,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._width_timer.setSingleShot(True)
         self._width_timer.setInterval(350)
         self._width_timer.timeout.connect(lambda: self.record_history({'widths'}))
+        # 행높이도 동일 패턴(드래그 연속 신호 → 디바운스 1단계). 열너비와 대칭으로 Undo 슬라이스 'rows' 기록.
+        self._height_timer = QTimer(self)
+        self._height_timer.setSingleShot(True)
+        self._height_timer.setInterval(350)
+        self._height_timer.timeout.connect(lambda: self.record_history({'rows'}))
 
         # ---------- 엑셀형 다중선택 동시조정 (열너비 / 행높이) ----------
         # 다중 선택(완전 선택된 열 N개 또는 행 N개) 중 하나의 경계를 드래그하면, 손을 떼는 순간(release)에
@@ -189,6 +194,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._propagating = False      # 동시조정 전파 중 — 전파가 다시 쏘는 sectionResized 재귀/재기록 차단
         self._pending_h = None         # 드래그 중인 (열, 새너비). release 때 나머지 선택 열에 전파 후 None
         self._pending_v = None         # 드래그 중인 (행, 새높이). release 때 나머지 선택 행에 전파 후 None
+        self._rows_dirty = False       # 행높이가 기본(20)에서 변경됐는지 — Memento 'rows' 캡처를 sentinel(None)로 건너뛰는 dirty 플래그
         self.table_csv.verticalHeader().sectionResized.connect(self._on_row_resized)
         self.table_csv.horizontalHeader().viewport().installEventFilter(self)
         self.table_csv.verticalHeader().viewport().installEventFilter(self)
@@ -219,14 +225,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if not proxy_model:
             return
         source_model = proxy_model.sourceModel()
-        if color is None:                       # button_none = 전체 해제 (소스 + Δ)
-            had = bool(source_model.highlight_cells) or proxy_model.has_delta_colors()
-            source_model.highlight_cell(None, [])
-            proxy_model.clear_all_delta_colors()
-            self.table_csv.clearSelection()
-            if had:                             # 칠해진 게 있었을 때만 1단계 기록(빈 상태 해제는 no-op)
-                self.record_history({'highlights', 'fd'})
-            return
         # 선택 셀을 실제 셀(소스)과 Δ 셀로 분리. Δ 셀은 소스가 없어 프록시에 (기준열, 소스행)으로 저장.
         accepted = proxy_model.accepted_rows()
         source_indexes = []
@@ -255,6 +253,32 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if color.isValid():
             self.last_custom_color = color
             self._apply_highlight(color)
+
+    def reset_analysis(self):
+        # button_reset: 현재 CSV의 모든 분석을 초기값으로 — 하이라이트·Δ색·열필터·Δ열·열너비(80)·행높이(20).
+        # .viewer 자동복원/Undo 와 동일 경로(_restore_memento)로 raw 적용 후 record_history → Undo 1단계로 가역.
+        entry = self._current_edit_entry()
+        if entry is None:
+            return
+        self._flush_size_debounce()      # 보류 중 크기 드래그를 자기 단계로 먼저 확정 → reset 은 깨끗이 1단계
+        proxy = entry['table_model']
+        source = proxy.sourceModel()
+        hdr = self.table_csv.horizontalHeader()
+        src_cols = source.columnCount()
+        # 이미 raw(분석 0)면 빈 단계 기록 방지 — no-op. 행높이는 dirty 플래그로 싸게 판정.
+        has_analysis = (
+            bool(source.highlight_cells)
+            or proxy.has_delta_colors()
+            or bool(proxy.column_filters)
+            or proxy.columnCount() != src_cols                       # Δ 가상열 존재
+            or any(hdr.sectionSize(c) != 80 for c in range(hdr.count()))
+            or self._rows_dirty                                      # 행높이가 기본(20)에서 바뀜
+        )
+        if not has_analysis:
+            return
+        self.table_csv.clearSelection()
+        self._restore_memento(entry, Memento(highlights={}, fd={}, widths=[80] * src_cols, rows=None))
+        self.record_history({'highlights', 'fd', 'widths', 'rows'})   # 전 슬라이스 1단계 = 가역
 
     def keyPressEvent(self, event):
         # Initial Ctrl+F Key Pressed
@@ -540,9 +564,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
     def _close_ui_overlays(self):
         # CSV 전환/폴더변경 직전: 디바운스 대기 중인 너비변경이 있으면 '아직 현재인' 이 CSV 에 먼저 확정
         # (record_history 는 _current_edit_entry=현재 CSV 기준 → 전환 전이라 올바른 CSV 에 기록).
-        if self._width_timer.isActive():
-            self._width_timer.stop()
-            self.record_history({'widths'})
+        self._flush_size_debounce()      # 보류 중 너비/행높이 디바운스를 '아직 현재인' 이 CSV 에 먼저 확정
         self.search_gui_hide()
         self._hide_message()
         header = self.table_csv.horizontalHeader()
@@ -680,12 +702,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._filter_csv_list(self.edit_csvname_find.text())
 
     def reload_current_csv(self):
+        # F5(표 포커스): 현재 CSV 캐시(히스토리 포함)를 비우고 디스크에서 재로드 → 로드 후 .viewer 저장 분석 자동복원.
+        # 캐시 폐기 후 새 baseline 으로 시작하므로 F5 자체는 Undo 비대상(비가역). raw 로 가려면 button_reset(초기화) 사용.
         if not self.csv_file_name or self.csv_file_name not in self.cache:
             return
 
         self._close_ui_overlays()
         del self.cache[self.csv_file_name]
-        self._skip_viewer.add(self.csv_file_name)   # 이번 F5 재로드는 .viewer 없이 raw 상태로(완전 새로고침)
 
         self.table_csv.setModel(None)
         self._start_loading(self.csv_file_name)
@@ -737,7 +760,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         entry = self.cache.get(csv_file_name)
         if not entry or not entry['table_data']:
             self.table_csv.setModel(None)
-            self._skip_viewer.discard(csv_file_name)    # 빈/실패면 복원할 것도 없음 → F5 마크 정리(스테일 방지)
             if entry and entry['status'] == 'empty':
                 self._show_message("No Data")
             elif entry and entry['status'] == 'fail':
@@ -764,6 +786,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
         self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
+        self._rows_dirty = False        # 모델 부착 시 행높이는 기본(20)으로 리셋됨 → dirty 해제(baseline=기본)
 
         # Set Column Widths (per-CSV) - 저장된 너비가 있으면 복원.
         # ⚠ 가로 스크롤(last_view)보다 먼저 적용해야 너비가 바꾼 스크롤 범위에 값이 클램프되지 않는다.
@@ -775,7 +798,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 hdr.resizeSection(c, w)
 
         self._width_timer.stop()                 # 셋업 중 시작됐을 수 있는 디바운스 취소
-        self._suppress_width_record = False      # 여기부터의 너비변경(=사용자 드래그)만 기록 대상
+        self._height_timer.stop()                # 행높이 디바운스도 동일
+        self._suppress_width_record = False      # 여기부터의 너비/높이 변경(=사용자 드래그)만 기록 대상
         self._ensure_baseline_history(entry)     # 모델 최초 표시 직후 baseline 1개 생성(이미 있으면 보존)
 
         # Set Last View (ScrollBar)
@@ -1007,9 +1031,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
     def _apply_saved_state(self, name, entry, proxy, source):
         # 저장된 .viewer 상태가 '현재 파일 내용 해시'와 일치할 때만 복원(모델 생성 직후·뷰 부착 전).
         # 순서: 필터·Δ 먼저 → 그 다음 하이라이트 → (이어서 update_table 이 col_widths → 스크롤 복원).
-        if name in self._skip_viewer:
-            self._skip_viewer.discard(name)     # F5 강제 새로고침 → 이번엔 .viewer 복원 건너뜀(raw 상태, 1회성)
-            return
         saved = self.saved_states.get(name)
         if not saved or saved.get('csv_sha256') != entry.get('content_hash'):
             return
@@ -1040,8 +1061,14 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             return proxy.sourceModel().export_highlights()
         if slice_name == 'fd':
             return proxy.export_state()
-        hdr = self.table_csv.horizontalHeader()      # 'widths'
-        return [hdr.sectionSize(c) for c in range(hdr.count())]
+        if slice_name == 'widths':
+            hdr = self.table_csv.horizontalHeader()
+            return [hdr.sectionSize(c) for c in range(hdr.count())]
+        # 'rows' — 행높이. 전부 기본(20)이면 sentinel(None)로 비용 0; 변경됐을 때만 보이는 행 전체 캡처.
+        if not self._rows_dirty:
+            return None
+        vhdr = self.table_csv.verticalHeader()
+        return [vhdr.sectionSize(r) for r in range(vhdr.count())]
 
     def _make_memento(self, entry, changed, prev):
         # COW: changed 에 든 슬라이스만 새로 추출, 나머지는 prev(직전 Memento)의 객체를 참조 그대로 재사용.
@@ -1050,7 +1077,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             if prev is None or name in changed:
                 return self._capture_slice(entry, name)
             return getattr(prev, name)
-        return Memento(take('highlights'), take('fd'), take('widths'))
+        return Memento(take('highlights'), take('fd'), take('widths'), take('rows'))
 
     def record_history(self, changed):
         # 사용자 액션 '꼬리'에서 1회만 호출(셀/열 루프 안 금지 → 일괄 변경도 1단계). changed=바뀐 슬라이스 집합.
@@ -1062,8 +1089,19 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             return                          # baseline 아직 없음(모델 표시 전) → 기록 스킵
         if 'widths' in changed:
             self._width_timer.stop()        # 명시적 너비 기록 시 보류 중 디바운스는 흡수(중복 단계 방지)
+        if 'rows' in changed:
+            self._height_timer.stop()       # 행높이도 동일(보류 디바운스 흡수 → 중복 단계 방지)
         hist.push(self._make_memento(entry, changed, hist.current()))
         self._update_undo_buttons()         # 새 액션 → undo 가능 + redo 가지 폐기(redo 버튼 비활성)
+
+    def _flush_size_debounce(self):
+        # 보류 중 너비/행높이 디바운스를 즉시 1단계로 확정(직전 드래그를 자기 단계로 — CSV 전환·reset 전에 호출).
+        if self._width_timer.isActive():
+            self._width_timer.stop()
+            self.record_history({'widths'})
+        if self._height_timer.isActive():
+            self._height_timer.stop()
+            self.record_history({'rows'})
 
     def _ensure_baseline_history(self, entry):
         # 모델 최초 표시 직후(너비/스크롤 복원까지 끝난 시점) baseline 1개로 히스토리 생성.
@@ -1101,6 +1139,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             if m.widths and len(m.widths) == hdr.count():
                 for c, w in enumerate(m.widths):
                     hdr.resizeSection(c, w)
+            self._restore_row_heights(m.rows)          # 행높이 복원(열너비와 대칭, 같은 suppress 가드 안)
         finally:
             self._suppress_width_record = False
         # Δ/검색 비교 테두리는 좌표가 어긋날 수 있어 초기화
@@ -1110,6 +1149,25 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 행 집합이 바뀌었을 수 있으니 검색바가 열려 있으면 재검색(apply_filter 와 동일 패턴)
         if self.frame_search.isVisible():
             self.search_model.search(self.edit_text_input.text())
+
+    def _restore_row_heights(self, rows):
+        # Memento 'rows' 복원(열너비와 대칭). rows=None → 전부 기본 20, 리스트 → 위치별 적용.
+        # ⚠ 반드시 _suppress_width_record 가드 안에서 호출(아래 resizeSection 이 _on_row_resized 를 재발동).
+        # ⚠ restore_state(필터) 뒤에 호출해야 보이는 행 수가 캡처 시점과 일치(positional 복원).
+        vhdr = self.table_csv.verticalHeader()
+        n = vhdr.count()
+        if rows is None:
+            if self._rows_dirty:                          # 현재 오버라이드가 있을 때만 청소(대용량 무필요 스캔 회피)
+                for r in range(n):
+                    if vhdr.sectionSize(r) != 20:
+                        vhdr.resizeSection(r, 20)
+                self._rows_dirty = False
+            return
+        if len(rows) == n:                                # 길이 불일치(필터 어긋남)면 미적용(안전장치)
+            for r, h in enumerate(rows):
+                if vhdr.sectionSize(r) != h:
+                    vhdr.resizeSection(r, h)
+            self._rows_dirty = True
 
     def _on_section_resized(self, idx, _old, new):
         # 사용자 열너비 드래그 → 디바운스 후 1회 기록. 프로그램적 변경(모델부착·복원)은 억제 플래그로,
@@ -1122,10 +1180,14 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._width_timer.start()
 
     def _on_row_resized(self, idx, _old, new):
-        # 사용자 행높이 드래그 → release 때 나머지 선택 행에 전파(세션 한정: 기록/저장 없음).
+        # 사용자 행높이 드래그 → release 때 나머지 선택 행에 전파 + 디바운스 후 1회 'rows' 기록(열너비와 대칭).
         if self._suppress_width_record or self._propagating:
             return
-        self._pending_v = (idx, new)
+        if self._current_edit_entry() is None:
+            return
+        self._pending_v = (idx, new)     # release 때 나머지 선택 행에 전파할 대상/크기
+        self._rows_dirty = True          # 행높이가 기본에서 바뀜 → 다음 Memento 는 'rows' 를 실제 리스트로 캡처
+        self._height_timer.start()
 
     def eventFilter(self, obj, event):
         # 두 헤더 viewport 의 마우스 release 를 잡아 '드래그 종료 시 일괄 적용'을 트리거(QHeaderView 엔

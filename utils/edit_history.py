@@ -11,13 +11,15 @@ push/undo/redo 와 상한 관리만 한다.
 """
 from collections import namedtuple
 
-# 한 시점의 '되돌릴 수 있는 상태' = 3 슬라이스(각각 .viewer 직렬화 형식).
+# 한 시점의 '되돌릴 수 있는 상태' = 4 슬라이스(각각 .viewer 직렬화 형식 또는 뷰 기하).
 #  - highlights: CSVTableModel.export_highlights()  → {색문자열: {열: [행, ...]}}
 #  - fd:         CSVFilterProxyModel.export_state()  → {column_filters, deltas}
 #  - widths:     [열너비, ...] (그 시점 열 수와 정합)
-# ⚠ 세 값은 '불변 스냅샷'으로 취급한다(복원은 read-only, export 는 매번 새 객체). 안 바뀐
+#  - rows:       [행높이, ...] (그 시점 보이는 행 수와 정합) 또는 None(전부 기본 20 = sentinel)
+# ⚠ 네 값은 '불변 스냅샷'으로 취급한다(복원은 read-only, export 는 매번 새 객체). 안 바뀐
 #   슬라이스는 직전 Memento 의 객체를 그대로 참조 공유해 메모리를 아낀다(COW) → 절대 제자리 수정 금지.
-Memento = namedtuple("Memento", "highlights fd widths")
+# ⚠ rows 는 .viewer 영속화 대상이 아니다(세션+Undo 한정) — 열너비와 달리 저장/CSV전환 복원은 안 함.
+Memento = namedtuple("Memento", "highlights fd widths rows")
 
 
 class EditHistory:

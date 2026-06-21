@@ -89,7 +89,7 @@ csv_viewer.py main()
 | `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
 | `CSVLoaderThread` | utils/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠). 캐시 무효화용 지문(`signature`=stat, `content_hash`=sha256)도 스레드에서 계산해 `t.signature/t.content_hash`로 노출 |
 | `view_state` (모듈) | utils/view_state.py | 분석 결과 영속화. `<CSV폴더>\.viewer`(폴더당 1 JSON)에 사용자 입력만 저장/로드. 원자적 쓰기(temp→os.replace)·머지, QColor↔'#rrggbb', envelope/version 게이트 (아래 ⚠ 변경 이력) |
-| `EditHistory` | utils/edit_history.py | Undo/Redo(Ctrl+Z/Ctrl+Y) 스택. **CSV별 1개**(cache['history']), 상한 20단계. `Memento`(highlights/fd/widths 3슬라이스 = .viewer 직렬화 재사용)를 push/undo/redo. 순수 저장소 — export·COW 판단은 `ViewerWindow.record_history`/`_make_memento` (아래 ⚠ 변경 이력) |
+| `EditHistory` | utils/edit_history.py | Undo/Redo(Ctrl+Z/Ctrl+Y) 스택. **CSV별 1개**(cache['history']), 상한 20단계. `Memento`(highlights/fd/widths/**rows** 4슬라이스 — 앞 3은 .viewer 직렬화 재사용, rows=행높이는 **세션+Undo 한정**으로 .viewer 미저장)를 push/undo/redo. 순수 저장소 — export·COW 판단은 `ViewerWindow.record_history`/`_make_memento` (아래 ⚠ 변경 이력) |
 
 > **⚠ 선택 영역 검색(scoped search)**: Ctrl+F 검색은 **검색바를 열 때의 선택 상태**로 범위가 정해진다(`SearchModel.capture_scope`, `gui_viewer.search_gui_init`에서 호출). **열/행 '전체 선택'만** 범위로 인정하고, 셀 클릭·셀범위 드래그는 **전체검색**이 된다. 범위는 검색바가 닫힐 때까지 유지(sticky)되며 닫으면 `reset_scope`로 해제된다(검색어를 바꿔 재검색해도 범위 유지). 규칙: **헤더(행 -1)는 전체검색일 때만 포함**(범위검색 시 제외) · 열+행 동시 선택은 **합집합**(선택 열 OR 선택 행). placeholder는 범위검색이면 `"Search selected area"`, 전체면 `"Find Text (Enter)"`. ⚠ 범위는 *열 때* 캡처되므로 **열/행을 먼저 선택한 뒤 Ctrl+F** 해야 한다(검색바를 먼저 연 뒤 선택하면 범위 안 잡힘 → 다시 열어야 함).
 >
@@ -166,6 +166,13 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 ---
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
+
+- **초기화 재설계: `button_reset`(옛 `button_none`)=전체 분석 초기화(가역) + F5=정상 재오픈 + 행높이 Undo 대상화**: '색만 해제'였던 버튼을 **모든 분석(하이라이트·Δ색·열필터·Δ열·열너비 80·행높이 20)을 초기값으로 되돌리는** `reset_analysis`로 바꿨다. 가역 = `.viewer`/Undo 복원과 **동일 경로**(`_restore_memento(raw)` 적용 후 `record_history` 1회 → Undo 1단계). 색 팔레트(`highlight_colors`)에서 분리하고 `_apply_highlight`의 `color is None` 분기 제거. no-op 가드(이미 raw면 빈 단계 안 쌓음)는 highlights·Δ색·`column_filters`·`columnCount!=src`·열너비≠80·`_rows_dirty`로 판정.
+  - ⚠ **행높이가 Undo 대상이 됐다(기존 '행은 세션 한정' 합의 뒤집음)** — reset의 행높이 초기화를 *가역*으로 만들려면 행높이를 스냅샷에 넣어야 하기 때문(드래그→reset→undo 누수 방지). `Memento`에 4번째 슬라이스 `rows` 추가(`edit_history.py`), 열너비와 **완전 대칭**: `_on_row_resized`가 `_height_timer`(350ms 디바운스)로 `record_history({'rows'})`, `_restore_memento`→`_restore_row_heights` 복원, `_close_ui_overlays`/reset 진입 시 `_flush_size_debounce`로 보류분 확정(드래그=자기 단계, reset=깨끗이 1단계). **단 `.viewer` 영속화는 미포함**(세션+Undo 한정 — 열너비와 달리 저장/CSV전환 복원 안 함).
+  - ⚠ **18만 행 비용 회피 = dirty-flag + sentinel**: 행높이를 안 건드리면 `_rows_dirty=False` → `_capture_slice('rows')`가 **None(스캔 0)**, 복원도 None이면 오버라이드 있을 때만 청소. 모델 부착 시 행은 기본 20으로 리셋되므로 `update_table`에서 `_rows_dirty=False`. 좌표는 **보이는(proxy) 행 위치** 기준 — `restore_state`(필터 재적용)로 보이는 행 수를 맞춘 *뒤* positional 적용, 길이 불일치면 미적용(안전).
+  - ⚠ **F5(`reload_current_csv`)는 이제 `_skip_viewer` 없이 정상 재오픈** — cache(히스토리 포함) 폐기 후 재로드 → 해시 일치 시 `.viewer` 자동복원(기존 'F5=raw 강제' 합의 뒤집음). cache 폐기로 새 baseline → **F5 자체는 Undo 비대상(비가역)**. raw 로 가려면 `button_reset`. `_skip_viewer` 머신러리 4곳 통째 삭제(정의·add·discard·`_apply_saved_state` 가드).
+  - ⚠ **개명**: `.ui`/생성 `.py`/아이콘(`button_reset.png`)은 사용자가 먼저 변경, 코드(`gui_viewer`)의 위젯 참조·dict 키·주석 3곳을 맞춰 정합화. 레이아웃상 reset 버튼은 색 팔레트에서 떨어져 undo/redo 좌측에 배치(개명+의미 변경에 맞는 위치).
+  - ⚠ 검증: offscreen 18만 행 e2e — 분석(하이라이트+필터+열너비200+행높이45)→reset→raw(80/20)→**Undo로 행높이45 포함 전부 복원**→Redo→raw, reset no-op(raw), standalone 행드래그 Undo→20, 필터 clear/복원 PASS. **버튼 클릭 체감·렌더는 offscreen 미검증 → 실Windows 육안 최종.**
 
 - **Δ 열 필터 팝업에서 첫 행 안내문구(`r(n)-r(n-1)`) 제외**: Δ 열 우클릭 필터 목록이 첫 보이는 행의 placeholder까지 후보값으로 잡던 것을 빼고 **2번째 (보이는) 행부터** 실제 Δ값만 수집한다. `filter_model.delta_values_excluding_self`에서 `v == _FIRST_LABEL` 스킵 1줄. ⚠ 스냅샷(`_delta_snap`)엔 라벨이 그대로 남아 **표시·값별 색칠·검색은 무영향**(드롭다운 후보에서만 제외) → 첫(기준) 행은 Δ값 필터로 숨길 수 없음(의도된 동작). 첫 행 판정은 인덱스가 아니라 `_FIRST_LABEL` 값으로 — 스냅샷 당시 첫 *보이는* 행이 곧 그 라벨이라 정확. 검증: offscreen(첫행 라벨 제외·실제 Δ값 `{3,0,7}`만·스냅샷 라벨 보존) PASS.
 

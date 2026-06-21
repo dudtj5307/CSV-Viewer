@@ -287,13 +287,13 @@ class Ui_ViewerWindow(object):
 "}")
         self.button_red.setText("")
         self.button_red.setObjectName("button_red")
-        self.button_none = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_none.setEnabled(True)
-        self.button_none.setGeometry(QtCore.QRect(220, 29, 20, 20))
+        self.button_reset = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_reset.setEnabled(True)
+        self.button_reset.setGeometry(QtCore.QRect(156, 29, 20, 20))
         font = QtGui.QFont()
         font.setBold(True)
-        self.button_none.setFont(font)
-        self.button_none.setStyleSheet("QPushButton {\n"
+        self.button_reset.setFont(font)
+        self.button_reset.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(230, 230, 230);\n"
 "    border: 1px solid black;\n"
 "    border-radius: 10px;\n"
@@ -311,9 +311,9 @@ class Ui_ViewerWindow(object):
 "QPushButton:disabled {\n"
 "    color: rgb(200,200,200);\n"
 "}")
-        self.button_none.setText("")
-        self.button_none.setIconSize(QtCore.QSize(17, 17))
-        self.button_none.setObjectName("button_none")
+        self.button_reset.setText("")
+        self.button_reset.setIconSize(QtCore.QSize(17, 17))
+        self.button_reset.setObjectName("button_reset")
         self.button_more = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_more.setEnabled(True)
         self.button_more.setGeometry(QtCore.QRect(482, 29, 39, 19))
@@ -363,6 +363,8 @@ class Ui_ViewerWindow(object):
         self.button_rename = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_rename.setEnabled(False)
         self.button_rename.setGeometry(QtCore.QRect(682, 1, 51, 20))
+        font = QtGui.QFont()
+        self.button_rename.setFont(font)
         self.button_rename.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
 "    border: 1px solid black;\n"
@@ -452,18 +454,18 @@ class Ui_ViewerWindow(object):
         self.edit_csvname_find.setObjectName("edit_csvname_find")
         self.button_undo = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_undo.setEnabled(True)
-        self.button_undo.setGeometry(QtCore.QRect(157, 28, 30, 20))
+        self.button_undo.setGeometry(QtCore.QRect(179, 28, 30, 20))
         self.button_undo.setStyleSheet("QPushButton {\n"
 "    background-color: rgba(230, 230, 230,0);\n"
-"    border-radius: 5px;\n"
+"    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "    background-color: lightgray;\n"
 "}\n"
 "\n"
@@ -474,18 +476,18 @@ class Ui_ViewerWindow(object):
         self.button_undo.setObjectName("button_undo")
         self.button_redo = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_redo.setEnabled(True)
-        self.button_redo.setGeometry(QtCore.QRect(187, 28, 30, 20))
+        self.button_redo.setGeometry(QtCore.QRect(209, 28, 30, 20))
         self.button_redo.setStyleSheet("QPushButton {\n"
 "    background-color: rgba(230, 230, 230,0);\n"
-"    border-radius: 5px;\n"
+"    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "    background-color: lightgray;\n"
 "}\n"
 "\n"
