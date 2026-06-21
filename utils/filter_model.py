@@ -447,6 +447,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         for i in range(len(self._src.rows)):
             if self._row_passes(i, exclude_delta=base):
                 v = snap.get(i, "")
+                if v == self._FIRST_LABEL:   # 첫(보이는) 행 안내문구 r(n)-r(n-1) 은 필터 후보에서 제외 → 2번째 행부터
+                    continue
                 values[v] = v not in hidden
         return values
 

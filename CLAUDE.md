@@ -167,6 +167,8 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
 
+- **Δ 열 필터 팝업에서 첫 행 안내문구(`r(n)-r(n-1)`) 제외**: Δ 열 우클릭 필터 목록이 첫 보이는 행의 placeholder까지 후보값으로 잡던 것을 빼고 **2번째 (보이는) 행부터** 실제 Δ값만 수집한다. `filter_model.delta_values_excluding_self`에서 `v == _FIRST_LABEL` 스킵 1줄. ⚠ 스냅샷(`_delta_snap`)엔 라벨이 그대로 남아 **표시·값별 색칠·검색은 무영향**(드롭다운 후보에서만 제외) → 첫(기준) 행은 Δ값 필터로 숨길 수 없음(의도된 동작). 첫 행 판정은 인덱스가 아니라 `_FIRST_LABEL` 값으로 — 스냅샷 당시 첫 *보이는* 행이 곧 그 라벨이라 정확. 검증: offscreen(첫행 라벨 제외·실제 Δ값 `{3,0,7}`만·스냅샷 라벨 보존) PASS.
+
 - **엑셀형 다중선택 동시조정(열너비/행높이) — 드래그 종료 시 일괄 적용**: 완전 선택된 열 N개(또는 행 N개) 중 하나의 경계를 드래그하면, **손을 떼는 순간** 나머지 선택분이 같은 크기로 스냅된다(드래그 *중*엔 잡은 하나만 실시간=Qt 기본). 신설 `_finalize_resize`·`_full_selection_sections`·`_on_row_resized`·`eventFilter` + `_propagating`/`_pending_h`/`_pending_v` 플래그(`gui_viewer`만, `gui_header` 무변경). `_on_section_resized`에 `_pending_h` 캡처+`_propagating` 가드 1줄씩.
   - ⚠ **행은 세션 한정**(사용자 합의): 행높이 전파는 동작하지만 `.viewer` 저장·Undo/Redo **대상 아님** → cache/Memento/`.viewer` 슬라이스 **신설 안 함**(작업량 대폭 축소). CSV 전환·모델 재부착 시 기본 20으로 리셋됨(per-CSV 행높이 저장 없음). **열은 기존 너비 저장/Undo 그대로** — 전파 후 기존 `_width_timer`가 잠시 뒤 `record_history({'widths'})` 1회로 피어 포함 1단계 기록(추가 코드 0).
   - ⚠ **release 감지 = 헤더 viewport의 eventFilter + `singleShot(0)`**: QHeaderView엔 'resize 종료' 신호가 없다(`sectionResized`는 드래그 *중* 연속 발생, 끝을 모름). 그래서 *어느 섹션을 어떤 크기로*는 `sectionResized`가 `_pending_h/v`에 캡처하고, *언제*(종료)는 헤더 mouse-release를 eventFilter로 잡아 `singleShot(0)`(헤더 자체 release 처리 직후=최종 크기 확정 후)로 `_finalize_resize` 호출. `_pending_*`가 없으면 no-op라 단순 헤더 클릭/우클릭(필터 팝업)엔 무영향. LeftButton release만.
