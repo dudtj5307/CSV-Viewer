@@ -80,6 +80,38 @@ class FilterHeaderView(QHeaderView):
         super().paintSection(painter, rect, logicalIndex)
         painter.restore()
 
+    def initStyleOptionForIndex(self, option, logicalIndex):
+        # ⚠ 18만 행 함정: Qt 기본 구현은 헤더 섹션의 selectedPosition(인접 선택 연결선)을 구하려
+        #   QItemSelectionModel.isColumnSelected() 를 부른다. 열이 '전체 선택'되면 이 함수는 true 를
+        #   단축할 수 없어 전 행을 순회하며 행마다 프록시 flags()(→mapToSource)를 호출한다 → 헤더
+        #   repaint 1회가 18만 호출 ≈ 1.6s. 선택할 때뿐 아니라 헤더 호버·가로스크롤·포커스마다 재실행돼
+        #   "계속 얼어붙는" 현상의 원인이었다(setHighlightSections 와 무관 — selectedPosition 계산이라서).
+        #   해법: super 가 도는 동안 rowCount 를 0으로 위장(_fast_header_paint)해 그 내부 전행 루프를
+        #   빈 루프로 만들고(가로 헤더 스타일은 행 수와 무관 → 렌더 영향 0, 측정상 픽셀 동일),
+        #   선택 상태(State_On = Bold 트리거)는 selection 범위로 O(range) 직접 판정한다.
+        #   (느린 selected*() 대신 range 직접 분석 — copy_selection·search 와 동일 철학.)
+        proxy = self.model()
+        fast = proxy is not None and hasattr(proxy, "_fast_header_paint")
+        if fast:
+            proxy._fast_header_paint = True
+        try:
+            super().initStyleOptionForIndex(option, logicalIndex)
+        finally:
+            if fast:
+                proxy._fast_header_paint = False
+        # super 가 0행으로 본 선택 상태는 무의미하므로 직접 세팅(NotAdjacent = 선택 연결선 생략).
+        option.selectedPosition = QStyleOptionHeader.SelectedPosition.NotAdjacent
+        option.state &= ~(QStyle.StateFlag.State_On | QStyle.StateFlag.State_Sunken)
+        if self._column_intersects_selection(logicalIndex):
+            option.state |= QStyle.StateFlag.State_On     # 열이 선택과 겹치면 Bold(paintSection 가 State_On 으로 판정)
+
+    def _column_intersects_selection(self, col):
+        # 이 열이 선택과 겹치는가 = 선택 범위 중 하나라도 이 열을 포함 (O(range), 행 수 무관).
+        sm = self.table_view.selectionModel()
+        if sm is None:
+            return False
+        return any(rng.left() <= col <= rng.right() for rng in sm.selection())
+
     def contextMenuEvent(self, event):
         if self.filter_popup:
             self.filter_popup.close()

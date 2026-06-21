@@ -37,6 +37,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._accepted = range(0)         # proxy_row -> source_row
         self._src_to_proxy = None         # source_row -> proxy_row (None = 항등 매핑)
         self._identity = True             # 필터 없음(항등 매핑) 여부
+        self._fast_header_paint = False   # 가로 헤더 paint 중 True → rowCount 0 위장(헤더 전행 스캔 차단, gui_header 참고)
 
         # --- Δ(행간 차이) 가상 열 ---
         self._delta_base = set()          # Δ를 가진 소스 열 집합
@@ -208,6 +209,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
     def rowCount(self, parent=QModelIndex()):
         if parent.isValid():
             return 0
+        if self._fast_header_paint:
+            return 0                       # 가로 헤더 paint 중: Qt 내부 isColumnSelected 의 전행 스캔 차단(gui_header)
         return len(self._accepted)
 
     def columnCount(self, parent=QModelIndex()):
