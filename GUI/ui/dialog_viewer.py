@@ -42,121 +42,6 @@ class Ui_ViewerWindow(object):
         self.frame_3.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         self.frame_3.setObjectName("frame_3")
         self.gridLayout_3.addWidget(self.frame_3, 0, 2, 1, 1)
-        self.frame_search = QtWidgets.QFrame(parent=self.centralwidget)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_search.sizePolicy().hasHeightForWidth())
-        self.frame_search.setSizePolicy(sizePolicy)
-        self.frame_search.setMinimumSize(QtCore.QSize(300, 31))
-        self.frame_search.setMaximumSize(QtCore.QSize(300, 31))
-        self.frame_search.setStyleSheet("QFrame {\n"
-"    border: 1px solid gray;\n"
-"    border-radius: 8px;\n"
-"    background-color: rgb(255, 255, 255);\n"
-"}")
-        self.frame_search.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
-        self.frame_search.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
-        self.frame_search.setObjectName("frame_search")
-        self.edit_text_input = QtWidgets.QLineEdit(parent=self.frame_search)
-        self.edit_text_input.setGeometry(QtCore.QRect(6, 5, 151, 21))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.edit_text_input.sizePolicy().hasHeightForWidth())
-        self.edit_text_input.setSizePolicy(sizePolicy)
-        self.edit_text_input.setStyleSheet("border: 0px;\n"
-"background-color: rgb(255, 255, 255);")
-        self.edit_text_input.setText("")
-        self.edit_text_input.setObjectName("edit_text_input")
-        self.button_forward = QtWidgets.QPushButton(parent=self.frame_search)
-        self.button_forward.setEnabled(False)
-        self.button_forward.setGeometry(QtCore.QRect(228, 5, 21, 21))
-        font = QtGui.QFont()
-        font.setPointSize(8)
-        font.setBold(True)
-        self.button_forward.setFont(font)
-        self.button_forward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.button_forward.setStyleSheet("QPushButton {\n"
-"    color: rgb(50, 50, 100);\n"
-"    background-color: white;\n"
-"    border: 0px;    \n"
-"    border-radius: 10px;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: lightgray;\n"
-"}\n"
-"\n"
-"QPushButton:disabled {\n"
-"    color: rgb(200,200,200);\n"
-"}")
-        self.button_forward.setObjectName("button_forward")
-        self.button_backward = QtWidgets.QPushButton(parent=self.frame_search)
-        self.button_backward.setEnabled(False)
-        self.button_backward.setGeometry(QtCore.QRect(249, 5, 21, 21))
-        font = QtGui.QFont()
-        font.setPointSize(8)
-        font.setBold(True)
-        self.button_backward.setFont(font)
-        self.button_backward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.button_backward.setStyleSheet("QPushButton {\n"
-"    color: rgb(50, 50, 100);\n"
-"    background-color: white;\n"
-"    border: 0px;    \n"
-"    border-radius: 10px;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: lightgray;\n"
-"}\n"
-"\n"
-"QPushButton:disabled {\n"
-"    color: rgb(200,200,200);\n"
-"}")
-        self.button_backward.setObjectName("button_backward")
-        self.button_close = QtWidgets.QPushButton(parent=self.frame_search)
-        self.button_close.setEnabled(True)
-        self.button_close.setGeometry(QtCore.QRect(270, 4, 21, 21))
-        font = QtGui.QFont()
-        font.setPointSize(15)
-        font.setBold(True)
-        self.button_close.setFont(font)
-        self.button_close.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.button_close.setStyleSheet("QPushButton {\n"
-"    color: rgb(100, 100, 100);\n"
-"    background-color: white;\n"
-"    border: 0px;    \n"
-"    border-radius: 10px;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: lightgray;\n"
-"}")
-        self.button_close.setObjectName("button_close")
-        self.label_idx_count = QtWidgets.QLabel(parent=self.frame_search)
-        self.label_idx_count.setGeometry(QtCore.QRect(134, 5, 91, 21))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.label_idx_count.sizePolicy().hasHeightForWidth())
-        self.label_idx_count.setSizePolicy(sizePolicy)
-        self.label_idx_count.setMinimumSize(QtCore.QSize(31, 21))
-        self.label_idx_count.setMaximumSize(QtCore.QSize(100, 21))
-        self.label_idx_count.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
-        self.label_idx_count.setStyleSheet("color: rgb(50, 50, 50);\n"
-"border: 0px;\n"
-"background-color: rgba(253, 253, 253, 0);")
-        self.label_idx_count.setText("")
-        self.label_idx_count.setScaledContents(False)
-        self.label_idx_count.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.label_idx_count.setObjectName("label_idx_count")
-        self.edit_text_input.raise_()
-        self.button_close.raise_()
-        self.button_backward.raise_()
-        self.button_forward.raise_()
-        self.label_idx_count.raise_()
-        self.gridLayout_3.addWidget(self.frame_search, 0, 1, 1, 1)
         self.frame_2 = QtWidgets.QFrame(parent=self.centralwidget)
         self.frame_2.setEnabled(True)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
@@ -496,6 +381,34 @@ class Ui_ViewerWindow(object):
 "}")
         self.button_redo.setText("")
         self.button_redo.setObjectName("button_redo")
+        self.button_info = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_info.setEnabled(True)
+        self.button_info.setGeometry(QtCore.QRect(530, 29, 20, 20))
+        font = QtGui.QFont()
+        font.setFamily("Arial")
+        font.setPointSize(10)
+        self.button_info.setFont(font)
+        self.button_info.setStyleSheet("QPushButton {\n"
+"    color: rgb(255, 255, 255);\n"
+"    background-color: rgb(1, 78, 195);\n"
+"    border: 1px solid white;\n"
+"    border-radius: 10px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 2px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"     border: 2px solid white;\n"
+"    background-color: rgb(2, 137, 255);\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_info.setIconSize(QtCore.QSize(17, 17))
+        self.button_info.setObjectName("button_info")
         self.gridLayout_3.addWidget(self.frame_2, 0, 0, 1, 1)
         self.frame = QtWidgets.QFrame(parent=self.centralwidget)
         self.frame.setStyleSheet("border: 0px;")
@@ -548,6 +461,121 @@ class Ui_ViewerWindow(object):
         self.list_csv_names.setObjectName("list_csv_names")
         self.gridLayout.addWidget(self.list_csv_names, 0, 0, 1, 1)
         self.gridLayout_3.addWidget(self.frame, 1, 0, 1, 3)
+        self.frame_search = QtWidgets.QFrame(parent=self.centralwidget)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.frame_search.sizePolicy().hasHeightForWidth())
+        self.frame_search.setSizePolicy(sizePolicy)
+        self.frame_search.setMinimumSize(QtCore.QSize(300, 31))
+        self.frame_search.setMaximumSize(QtCore.QSize(300, 31))
+        self.frame_search.setStyleSheet("QFrame {\n"
+"    border: 1px solid gray;\n"
+"    border-radius: 8px;\n"
+"    background-color: rgb(255, 255, 255);\n"
+"}")
+        self.frame_search.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.frame_search.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
+        self.frame_search.setObjectName("frame_search")
+        self.edit_text_input = QtWidgets.QLineEdit(parent=self.frame_search)
+        self.edit_text_input.setGeometry(QtCore.QRect(6, 5, 151, 21))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.edit_text_input.sizePolicy().hasHeightForWidth())
+        self.edit_text_input.setSizePolicy(sizePolicy)
+        self.edit_text_input.setStyleSheet("border: 0px;\n"
+"background-color: rgb(255, 255, 255);")
+        self.edit_text_input.setText("")
+        self.edit_text_input.setObjectName("edit_text_input")
+        self.button_forward = QtWidgets.QPushButton(parent=self.frame_search)
+        self.button_forward.setEnabled(False)
+        self.button_forward.setGeometry(QtCore.QRect(228, 5, 21, 21))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        self.button_forward.setFont(font)
+        self.button_forward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
+        self.button_forward.setStyleSheet("QPushButton {\n"
+"    color: rgb(50, 50, 100);\n"
+"    background-color: white;\n"
+"    border: 0px;    \n"
+"    border-radius: 10px;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_forward.setObjectName("button_forward")
+        self.button_backward = QtWidgets.QPushButton(parent=self.frame_search)
+        self.button_backward.setEnabled(False)
+        self.button_backward.setGeometry(QtCore.QRect(249, 5, 21, 21))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        font.setBold(True)
+        self.button_backward.setFont(font)
+        self.button_backward.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
+        self.button_backward.setStyleSheet("QPushButton {\n"
+"    color: rgb(50, 50, 100);\n"
+"    background-color: white;\n"
+"    border: 0px;    \n"
+"    border-radius: 10px;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_backward.setObjectName("button_backward")
+        self.button_close = QtWidgets.QPushButton(parent=self.frame_search)
+        self.button_close.setEnabled(True)
+        self.button_close.setGeometry(QtCore.QRect(270, 4, 21, 21))
+        font = QtGui.QFont()
+        font.setPointSize(15)
+        font.setBold(True)
+        self.button_close.setFont(font)
+        self.button_close.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
+        self.button_close.setStyleSheet("QPushButton {\n"
+"    color: rgb(100, 100, 100);\n"
+"    background-color: white;\n"
+"    border: 0px;    \n"
+"    border-radius: 10px;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"}")
+        self.button_close.setObjectName("button_close")
+        self.label_idx_count = QtWidgets.QLabel(parent=self.frame_search)
+        self.label_idx_count.setGeometry(QtCore.QRect(134, 5, 91, 21))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.label_idx_count.sizePolicy().hasHeightForWidth())
+        self.label_idx_count.setSizePolicy(sizePolicy)
+        self.label_idx_count.setMinimumSize(QtCore.QSize(31, 21))
+        self.label_idx_count.setMaximumSize(QtCore.QSize(100, 21))
+        self.label_idx_count.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
+        self.label_idx_count.setStyleSheet("color: rgb(50, 50, 50);\n"
+"border: 0px;\n"
+"background-color: rgba(253, 253, 253, 0);")
+        self.label_idx_count.setText("")
+        self.label_idx_count.setScaledContents(False)
+        self.label_idx_count.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.label_idx_count.setObjectName("label_idx_count")
+        self.edit_text_input.raise_()
+        self.button_close.raise_()
+        self.button_backward.raise_()
+        self.button_forward.raise_()
+        self.label_idx_count.raise_()
+        self.gridLayout_3.addWidget(self.frame_search, 0, 1, 1, 1)
         ViewerWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(ViewerWindow)
@@ -556,6 +584,8 @@ class Ui_ViewerWindow(object):
     def retranslateUi(self, ViewerWindow):
         _translate = QtCore.QCoreApplication.translate
         ViewerWindow.setWindowTitle(_translate("ViewerWindow", "MainWindow"))
+        self.button_rename.setText(_translate("ViewerWindow", "Rename"))
+        self.button_info.setText(_translate("ViewerWindow", "i"))
         self.edit_text_input.setToolTip(_translate("ViewerWindow", "Search whole table (Enter)"))
         self.edit_text_input.setPlaceholderText(_translate("ViewerWindow", "Search whole table (Enter)"))
         self.button_forward.setToolTip(_translate("ViewerWindow", "Previous (F2)"))
@@ -564,4 +594,3 @@ class Ui_ViewerWindow(object):
         self.button_backward.setText(_translate("ViewerWindow", "▶"))
         self.button_close.setToolTip(_translate("ViewerWindow", "Close (ESC)"))
         self.button_close.setText(_translate("ViewerWindow", "×"))
-        self.button_rename.setText(_translate("ViewerWindow", "Rename"))
