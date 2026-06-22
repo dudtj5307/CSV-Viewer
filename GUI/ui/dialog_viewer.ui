@@ -659,16 +659,16 @@ QPushButton:disabled {
         <string notr="true">QPushButton {
 	color: rgb(255, 255, 255);
 	background-color: rgb(1, 78, 195);
-    border: 1px solid white;
+    border: 2px solid white;
     border-radius: 10px;
 }
 
 QPushButton:hover {
-	border: 2px solid #333;
+	border: 2px solid rgb(200, 200, 200)
 }
 
 QPushButton:pressed {
- 	border: 2px solid white;
+ 	border: 3px solid white;
 	background-color: rgb(2, 137, 255);
 }
 
