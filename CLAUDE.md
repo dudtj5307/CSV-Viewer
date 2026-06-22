@@ -167,6 +167,10 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
 
+- **필터 팝업 Apply/Close가 scrollArea에 가려지던 문제 해결(창 최소높이 = 매직 상수 → 레이아웃 실측값)**: 값 개수가 많아 `scrollArea`가 최소높이(220)에 도달하면 아래의 Apply/Close/Clear 버튼이 scrollArea에 덮이던 버그. 원인은 `gui_filter.create_items`의 창 최소높이가 `scrollbox_height+120`로 하드코딩돼 실제 chrome(라벨·검색칸·Apply/Close·Clear·Tools 프레임·여백 ≈137px)을 **과소평가** → 창이 layout 실제 최소(356)보다 작은 340으로 떠서, 그 좁은 공간에서 scrollArea가 자기 최소(220)를 고수하며 버튼 위로 흘러내림. 해결: `self.layout().activate()` 후 `self.setMinimumHeight(self.layout().minimumSize().height())`로 **레이아웃 실측 최소**를 사용 → 항목 수에 맞춰 자동 보정(적으면 203~263, 많으면 356), max는 그대로 400.
+  - ⚠ **명시적 `minimumHeight`가 layout 최소보다 작으면 그 작은 값이 우선**된다(layout 최소가 자동 floor가 되지 않음 — 실측 확인). 그래서 반드시 layout 실측값(또는 그 이상)으로 줘야 함. `.ui`의 `setMinimumSize(200,171)`도 같은 함정이라 코드에서 덮어야 함. **Designer 변경 아님**(코드 한 곳). 참고로 maxsize 400은 `.ui`의 600×600이 아니라 `create_items`의 `setMaximumSize(QSize(1100,400))`가 결정.
+  - ⚠ 검증: offscreen geometry(n=1·4·15·50·300·2000 모두 scrollArea↔Apply 겹침≤0·Tools 프레임 비클립·창높이≤400) PASS. **겹침은 순수 geometry라 offscreen이 사실상 확정**(Bold 렌더류와 달리 좌표 계산이라 육안 불필요. 다만 실Windows 폰트 metric이 다르면 layout 최소도 같이 커져 자동 보정됨).
+
 - **열/행 크기 저장 = sparse 그룹 포맷 + 행높이 .viewer 영속화(열과 parity)**: `.viewer` 의 `col_widths` 를 전체 배열에서 **'기본값과 다른 것만' `{크기:[인덱스]}` 그룹**(하이라이트와 동일 철학)으로 바꾸고, **`row_heights` 를 신설**해 행높이도 저장 대상에 포함(열과 완전 동일 — Ctrl+S/.viewer + CSV 전환 cache 둘 다). 인메모리(cache)는 `{인덱스:크기}` sparse, 파일은 `{크기:[인덱스]}` 그룹. 신설 `view_state.pack_sizes`/`unpack_sizes` + `gui_viewer._scan_overrides`.
   - ⚠ **왜 그룹(`{크기:[인덱스]}`)이냐**: `_pretty` 가 잎 배열을 한 줄로 유지하므로 다중선택 동기조정으로 **수만 행을 같은 높이로 바꿔도 파일이 안 부푼다**(평면 `{인덱스:크기}` 면 수만 줄). 같은 크기끼리 묶음.
   - ⚠ **구포맷(v1 배열) 하위호환**: `unpack_sizes` 가 `col_widths` 가 list(`[80,200,...]`)면 위치=인덱스로 흡수(기존 `.viewer` 그대로 읽힘). `SCHEMA_VERSION` 1→2(게이트 아님·정보용).

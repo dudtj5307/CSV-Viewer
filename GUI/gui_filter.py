@@ -132,11 +132,17 @@ class FilterWidget(QWidget, Ui_FilterForm):
         self.edit_filter_text.textChanged.connect(self.filter_items)
 
         # Update widget size based on its content
-        scrollbox_height = min(self.widget.sizeHint().height() + 20, 174)
+        scrollbox_height = min(self.widget.sizeHint().height()+3, 200)
         self.scrollArea.setMinimumHeight(scrollbox_height)
 
-        self.setMinimumHeight(scrollbox_height+120)
         self.setMaximumSize(QSize(1000, 400))
+        # 창 최소높이 = 레이아웃이 실제로 요구하는 값(scrollArea 최소 + 라벨·검색칸·Apply/Close·
+        # Clear·Tools 프레임·여백 전부). 과거의 매직 상수(scrollbox_height+120)는 실제 chrome(≈137px)을
+        # 과소평가해 창이 layout 최소보다 작게 잡혔고, 그 안에서 scrollArea가 자기 최소높이(220)를
+        # 고수하며 Apply/Close 위로 흘러내려 버튼을 덮었다. 레이아웃 최소로 잡으면 항목 수에 맞춰
+        # 자동 보정돼 겹침이 사라진다. (명시적 minimumHeight는 layout 최소보다 작아도 그 값이 우선됨)
+        self.layout().activate()
+        self.setMinimumHeight(self.layout().minimumSize().height())
 
         # 초기 master/Apply 상태를 데이터 기준으로 정확히 설정
         self._refresh_master()
