@@ -167,6 +167,11 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
 
+- **폴더 버튼(`button_csv_folder`) = 폴더 선택창 → Windows 탐색기 열기로 변경**: 클릭 시 폴더 선택 다이얼로그 대신 `edit_csv_path`(=`csv_folder_path`, 상위 경로)를 `os.startfile`로 탐색기 새 창에 연다. 경로가 비었거나 더 이상 존재하지 않으면 `_app_dir()`(frozen=`dirname(sys.executable)`, 개발=`dirname(abspath(sys.argv[0]))`)로 대체. 신설 `open_folder_in_explorer`/`_app_dir`(`gui_viewer`) + 버튼 connect 교체 + 툴팁("Open folder in Explorer") + `import sys`.
+  - ⚠ **`open_csv_folder`(폴더 선택창)는 그대로 유지** — 빈 창 시작(`csv_viewer.py`의 `QTimer.singleShot(0, open_csv_folder)`)과 `edit_csv_path` **텍스트 클릭**(`mousePressEvent`)이 계속 사용. 즉 폴더 변경 수단은 (a) 경로 텍스트 클릭=선택창, (b) 드래그&드롭으로 유지되고 **버튼만** 탐색기로 바뀜. (버튼↔텍스트클릭이 과거엔 '동일 동작'이었으나 이제 의도적으로 분리 — 해당 주석도 갱신.)
+  - ⚠ **여는 건 상위 경로(parent)** — `edit_csv_path`는 보는 CSV 폴더가 아니라 그 *상위* 폴더라, 탐색기엔 형제 CSV 폴더들이 보인다(거기서 다른 폴더를 드래그해 되넣기 좋음 — 선택창 제거와 정합). 보는 폴더 자체를 열려면 `os.path.join(csv_folder_path, csv_folder_name)`로 바꿔야 함.
+  - ⚠ 검증: offscreen — `os.startfile` 몽키패치로 타깃만 캡처(유효 경로→그 경로, 빈/무효→`_app_dir()`, `_app_dir()`=실재 디렉터리) PASS. **실제 탐색기 창 오픈은 실Windows 육안 최종.**
+
 - **필터 팝업 Apply/Close가 scrollArea에 가려지던 문제 해결(창 최소높이 = 매직 상수 → 레이아웃 실측값)**: 값 개수가 많아 `scrollArea`가 최소높이(220)에 도달하면 아래의 Apply/Close/Clear 버튼이 scrollArea에 덮이던 버그. 원인은 `gui_filter.create_items`의 창 최소높이가 `scrollbox_height+120`로 하드코딩돼 실제 chrome(라벨·검색칸·Apply/Close·Clear·Tools 프레임·여백 ≈137px)을 **과소평가** → 창이 layout 실제 최소(356)보다 작은 340으로 떠서, 그 좁은 공간에서 scrollArea가 자기 최소(220)를 고수하며 버튼 위로 흘러내림. 해결: `self.layout().activate()` 후 `self.setMinimumHeight(self.layout().minimumSize().height())`로 **레이아웃 실측 최소**를 사용 → 항목 수에 맞춰 자동 보정(적으면 203~263, 많으면 356), max는 그대로 400.
   - ⚠ **명시적 `minimumHeight`가 layout 최소보다 작으면 그 작은 값이 우선**된다(layout 최소가 자동 floor가 되지 않음 — 실측 확인). 그래서 반드시 layout 실측값(또는 그 이상)으로 줘야 함. `.ui`의 `setMinimumSize(200,171)`도 같은 함정이라 코드에서 덮어야 함. **Designer 변경 아님**(코드 한 곳). 참고로 maxsize 400은 `.ui`의 600×600이 아니라 `create_items`의 `setMaximumSize(QSize(1100,400))`가 결정.
   - ⚠ 검증: offscreen geometry(n=1·4·15·50·300·2000 모두 scrollArea↔Apply 겹침≤0·Tools 프레임 비클립·창높이≤400) PASS. **겹침은 순수 geometry라 offscreen이 사실상 확정**(Bold 렌더류와 달리 좌표 계산이라 육안 불필요. 다만 실Windows 폰트 metric이 다르면 layout 최소도 같이 커져 자동 보정됨).

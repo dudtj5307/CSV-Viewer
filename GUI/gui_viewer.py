@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import hashlib
 from bisect import bisect_right
@@ -58,11 +59,14 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.button_reset.setIcon(QIcon(os.path.join(self.icon_path, "button_reset.png")))
         self.button_csv_folder.setIcon(QIcon(os.path.join(self.icon_path, "button_csv_folder_raw.png")))
 
-        # CSV 경로 표시 (edit_csv_path=상위 경로 / edit_csv_path2=폴더명) + 폴더 변경 버튼
+        # CSV 경로 표시 (edit_csv_path=상위 경로 / edit_csv_path2=폴더명)
         self._set_path_fields()
-        self.button_csv_folder.clicked.connect(self.open_csv_folder)
+        # 폴더 버튼: 폴더 선택창이 아니라 상위 경로(edit_csv_path)를 Windows 탐색기 새 창으로 연다
+        # (경로가 비었거나 무효하면 실행파일 위치로 대체). 폴더 변경은 아래 경로 텍스트 클릭/드래그&드롭으로.
+        self.button_csv_folder.setToolTip("Open folder in Explorer")
+        self.button_csv_folder.clicked.connect(self.open_folder_in_explorer)
 
-        # edit_csv_path(상위 경로) 전체를 클릭하면 폴더 선택 버튼과 동일 동작 (readOnly라 클릭 전용으로 사용)
+        # edit_csv_path(상위 경로) 텍스트 클릭은 기존대로 폴더 선택창(다른 CSV 폴더로 변경, readOnly라 클릭 전용)
         self.edit_csv_path.setCursor(Qt.CursorShape.PointingHandCursor)
         self.edit_csv_path.mousePressEvent = lambda event: self.open_csv_folder()
 
@@ -527,6 +531,23 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         folder = QFileDialog.getExistingDirectory(self, "Select CSV folder", initial)
         if folder:
             self._load_folder(os.path.normpath(folder))
+
+    def open_folder_in_explorer(self):
+        # 폴더 버튼: 폴더 선택창이 아니라 edit_csv_path(상위 경로)를 Windows 탐색기 새 창으로 연다.
+        # 경로가 비었거나 더 이상 존재하지 않으면 이 실행파일이 있는 디렉터리로 대체한다.
+        target = self.csv_folder_path
+        if not target or not os.path.isdir(target):
+            target = self._app_dir()
+        try:
+            os.startfile(target)        # Windows 전용: 폴더를 탐색기 새 창으로 연다
+        except OSError:
+            pass
+
+    def _app_dir(self):
+        # 이 앱의 위치 — frozen(exe) 빌드는 실행파일 디렉터리, 개발 실행은 진입 스크립트 디렉터리.
+        if getattr(sys, "frozen", False):
+            return os.path.dirname(sys.executable)
+        return os.path.dirname(os.path.abspath(sys.argv[0]))
 
     # --- 창에 CSV 폴더 드롭 -> 새로 로드 (PathLineEdit 방식) ---
     def dragEnterEvent(self, event):
