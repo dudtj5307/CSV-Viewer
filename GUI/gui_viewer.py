@@ -4,7 +4,7 @@ import time
 import hashlib
 from bisect import bisect_right
 
-from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect
+from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect, QHeaderView
 from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie
 from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
 
@@ -18,7 +18,7 @@ from utils import view_state
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
 from GUI.ui.widget_esc import Ui_WidgetESC
 
-from GUI.gui_header import FilterHeaderView
+from GUI.gui_header import FilterHeaderView, MarkerVHeaderView
 from GUI.gui_delegate import CompareBorderDelegate
 
 
@@ -29,6 +29,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     # Undo/Redo(Ctrl+Z/Ctrl+Y): CSV별로 되돌릴 수 있는 최대 '액션' 수 (baseline 제외).
     MAX_UNDO_STEPS = 20
+
+    # 숨기기 트리거: 섹션 경계를 그 섹션의 시작 끝(왼쪽/위)보다 이만큼(px) 더 끌면 숨김.
+    # 음수 = '0 너비를 넘어 마이너스로'. -2 라 끝에 딱 붙이는 정도(0~)는 그냥 최소폭으로 남고, 2px 더 밀어야 숨김.
+    HIDE_DRAG_THRESHOLD_PX = -2
 
     def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
@@ -141,6 +145,16 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # Custom horizontal header with filtering
         self.table_csv.setHorizontalHeader(FilterHeaderView(Qt.Orientation.Horizontal, self))
+        # Custom vertical header — 행 마커(︙) 페인트 전용(가로 헤더와 대칭). 더블클릭 펼침은 ViewerWindow 가 처리.
+        self.table_csv.setVerticalHeader(MarkerVHeaderView(Qt.Orientation.Vertical, self))
+        # 헤더 교체로 위에서 건 세로헤더 배경 스타일시트가 사라지므로 새 헤더에 다시 적용
+        self.table_csv.verticalHeader().setStyleSheet("QHeaderView::section:vertical { background-color: rgb(240, 240, 240); }")
+        # ⚠ 최소 섹션크기는 Qt 기본값을 그대로 둔다(예전엔 5px 로 낮췄으나 너무 작아 복원). 숨기기 감지는
+        #   '마우스가 섹션 시작 끝을 넘었는가(geometry)' 기반이라 최소폭과 무관하게 동작한다.
+        # 마커 더블클릭 → 그 구간 펼치기 (헤더 섹션 더블클릭 + 본문 셀 더블클릭 둘 다 받음)
+        self.table_csv.horizontalHeader().sectionDoubleClicked.connect(self._on_hcol_double_clicked)
+        self.table_csv.verticalHeader().sectionDoubleClicked.connect(self._on_vrow_double_clicked)
+        self.table_csv.doubleClicked.connect(self._on_cell_double_clicked)
 
         # Δ 셀 선택 시 비교한 두 부모셀에 테두리(현재=파랑/이전=빨강)를 그리는 delegate
         self.border_delegate = CompareBorderDelegate(self.table_csv)
@@ -198,6 +212,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._propagating = False      # 동시조정 전파 중 — 전파가 다시 쏘는 sectionResized 재귀/재기록 차단
         self._pending_h = None         # 드래그 중인 (열, 새너비). release 때 나머지 선택 열에 전파 후 None
         self._pending_v = None         # 드래그 중인 (행, 새높이). release 때 나머지 선택 행에 전파 후 None
+        # 숨기기 제스처 추적: press 때 리사이즈 그립을 잡고(어느 섹션/시작 끝/원래 크기), release 때 마우스가
+        # 그 섹션 시작 끝보다 왼쪽/위로 갔으면(음수 너비) 숨김으로 해석한다. (Qt sectionResized 는 최소폭으로
+        # 클램프돼 음수를 안 주므로 마우스 좌표 geometry 로 판정 — 이미 최소폭인 섹션도 press 로 잡아 숨길 수 있음)
+        self._resize_grip = None       # (horizontal, idx, lead_px, pre_size) | None
+        self._resize_release = None    # (x, y) 뷰포트 좌표 | None
         self._rows_dirty = False       # 행높이가 기본(20)에서 변경됐는지 — Memento 'rows' 캡처를 sentinel(None)로 건너뛰는 dirty 플래그
         self.table_csv.verticalHeader().sectionResized.connect(self._on_row_resized)
         self.table_csv.horizontalHeader().viewport().installEventFilter(self)
@@ -234,6 +253,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         source_indexes = []
         delta_targets = []
         for pi in self.table_csv.selectedIndexes():
+            if proxy_model.is_hidemark_row(pi.row()) or proxy_model.is_hidemark_column(pi.column()):
+                continue                                # 마커 셀은 색칠 대상 아님
             if proxy_model.is_delta_column(pi.column()):
                 delta_targets.append((proxy_model.source_column_of(pi.column()), accepted[pi.row()]))
             else:
@@ -274,7 +295,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             bool(source.highlight_cells)
             or proxy.has_delta_colors()
             or bool(proxy.column_filters)
-            or proxy.columnCount() != src_cols                       # Δ 가상열 존재
+            or proxy.columnCount() != src_cols                       # Δ 가상열 또는 숨긴 열로 열 수 변동
+            or proxy.has_hidden()                                    # 행/열 숨김 존재
             or any(hdr.sectionSize(c) != 80 for c in range(hdr.count()))
             or self._rows_dirty                                      # 행높이가 기본(20)에서 바뀜
         )
@@ -599,15 +621,20 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                                          'signature': None, 'content_hash': None, 'status': None}
         return self.cache[csv_file_name]
 
-    def _scan_overrides(self, header):
+    def _scan_overrides(self, header, skip=None):
         # 헤더에서 '기본값과 다른' 섹션만 {인덱스: 크기} sparse 로 추출(열너비/행높이 공용).
         # ⚠ 기준은 하드코딩(80/20)이 아니라 header.defaultSectionSize() — 미수정 섹션은 정의상 이 값을
         #   반환한다. 행 기본높이가 폰트/스타일 최소치로 클램프돼 20이 아니어도(예: 30) '안 바뀐 행'을 안
         #   저장한다. (하드코딩 20 이면 클램프된 기본행이 전부 '변경됨'으로 잡혀 .viewer 에 모든 행이 저장되던 버그.)
+        # ⚠ skip = 마커(⋯/︙) 섹션 인덱스 — 마커의 고정 두께(18)를 '열너비 오버라이드'로 저장하면 다음 로드 때
+        #   엉뚱한 열에 적용되므로 제외한다(마커 두께는 update_table 이 항상 다시 부여).
         # 한 번 스캔(섹션당 O(1)) — CSV 전환·Ctrl+S 같은 사용자 액션에서만 호출(핫패스 아님).
         default = header.defaultSectionSize()
+        skip = skip or ()
         out = {}
         for i in range(header.count()):
+            if i in skip:
+                continue
             s = header.sectionSize(i)
             if s != default:
                 out[i] = s
@@ -677,9 +704,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             h = self.table_csv.horizontalScrollBar().value()
             prev['last_view'] = (v, h)
             # 열너비·행높이도 per-CSV 저장(last_view 와 동일 범주). 기본값과 다른 것만 sparse {인덱스:크기}.
-            # 열은 수 적어 항상 스캔, 행은 _rows_dirty 일 때만(아니면 18만 행 스캔 회피).
-            prev['col_widths'] = self._scan_overrides(self.table_csv.horizontalHeader())
-            prev['row_heights'] = self._scan_overrides(self.table_csv.verticalHeader()) if self._rows_dirty else {}
+            # 열은 수 적어 항상 스캔, 행은 _rows_dirty 일 때만(아니면 18만 행 스캔 회피). 마커 섹션은 제외.
+            pm = prev['table_model']
+            prev['col_widths'] = self._scan_overrides(self.table_csv.horizontalHeader(), skip=set(pm.marker_col_positions()))
+            prev['row_heights'] = self._scan_overrides(self.table_csv.verticalHeader(), skip=set(pm.marker_row_positions())) if self._rows_dirty else {}
 
         self._close_ui_overlays()
 
@@ -841,6 +869,17 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if row_heights:
             self._rows_dirty = True
 
+        # 마커 섹션(⋯/︙)은 저장된 col_widths/row_heights 에서 제외돼 있으므로 여기서 항상 고정 두께 + Fixed 모드로.
+        proxy_disp = entry['table_model']
+        for pc in proxy_disp.marker_col_positions():
+            if 0 <= pc < hdr.count():
+                hdr.resizeSection(pc, self.MARKER_SIZE_PX)
+        for pr in proxy_disp.marker_row_positions():
+            if 0 <= pr < vhdr.count():
+                vhdr.resizeSection(pr, self.MARKER_SIZE_PX)
+        self._fix_marker_sections(hdr, proxy_disp.marker_col_positions())     # 마커만 리사이즈 불가(스테일 Fixed 도 정리)
+        self._fix_marker_sections(vhdr, proxy_disp.marker_row_positions())
+
         self._width_timer.stop()                 # 셋업 중 시작됐을 수 있는 디바운스 취소
         self._height_timer.stop()                # 행높이 디바운스도 동일
         self._suppress_width_record = False      # 여기부터의 너비/높이 변경(=사용자 드래그)만 기록 대상
@@ -901,6 +940,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         row_count, col_count = model.rowCount(), model.columnCount()
 
         cols = sorted({c for (_t, _b, l, r) in ranges for c in range(l, r + 1)})
+        if hasattr(model, "is_hidemark_column"):
+            cols = [c for c in cols if not model.is_hidemark_column(c)]   # 마커 열은 복사에서 제외
 
         # 헤더행 포함(열 전체 선택) / 행번호열 포함(행 전체 선택) 여부 - 느린 selected*() 대신 구간 커버리지
         full_cols = any(self._spans_cover([(t, b) for (t, b, l, r) in ranges if l <= c <= r], row_count)
@@ -960,6 +1001,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             lines.append('\t'.join(head))
 
         for r in rows:
+            if fast and accepted[r] < 0:        # 마커 행 → 소스 데이터 없음(복사 제외)
+                continue
             line = [str(model.headerData(r, V, DISP) or '')] if full_rows else []
             if fast:
                 sr = accepted[r]
@@ -1062,9 +1105,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             'csv_sha256': entry.get('content_hash'),
             'csv_size':   sig[0] if sig else None,
             'highlights': source.export_highlights(),
-            'col_widths': view_state.pack_sizes(self._scan_overrides(hdr)),
+            'col_widths': view_state.pack_sizes(self._scan_overrides(hdr, skip=set(proxy.marker_col_positions()))),
             'row_heights': view_state.pack_sizes(
-                self._scan_overrides(self.table_csv.verticalHeader()) if self._rows_dirty else {}),
+                self._scan_overrides(self.table_csv.verticalHeader(), skip=set(proxy.marker_row_positions()))
+                if self._rows_dirty else {}),
             'scroll':     [self.table_csv.verticalScrollBar().value(),
                            self.table_csv.horizontalScrollBar().value()],
         }
@@ -1187,6 +1231,16 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 for c, w in enumerate(m.widths):
                     hdr.resizeSection(c, w)
             self._restore_row_heights(m.rows)          # 행높이 복원(열너비와 대칭, 같은 suppress 가드 안)
+            # 마커 섹션은 항상 고정 두께 + Fixed 모드 — widths/rows 메멘토가 마커를 포함 안 할 수도 있어 명시 적용.
+            vhdr = self.table_csv.verticalHeader()
+            for pc in proxy.marker_col_positions():
+                if 0 <= pc < hdr.count():
+                    hdr.resizeSection(pc, self.MARKER_SIZE_PX)
+            for pr in proxy.marker_row_positions():
+                if 0 <= pr < vhdr.count():
+                    vhdr.resizeSection(pr, self.MARKER_SIZE_PX)
+            self._fix_marker_sections(hdr, proxy.marker_col_positions())
+            self._fix_marker_sections(vhdr, proxy.marker_row_positions())
         finally:
             self._suppress_width_record = False
         # Δ/검색 비교 테두리는 좌표가 어긋날 수 있어 초기화
@@ -1238,25 +1292,71 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._height_timer.start()
 
     def eventFilter(self, obj, event):
-        # 두 헤더 viewport 의 마우스 release 를 잡아 '드래그 종료 시 일괄 적용'을 트리거(QHeaderView 엔
-        # 종료 신호 없음). ⚠ 마우스 이벤트는 헤더가 아니라 viewport 로 오므로 obj 도 viewport 와 비교한다.
-        # singleShot(0) 으로 헤더 자체 release 처리 직후 실행(=최종 크기 확정 후). _pending_* 가 없으면 no-op
-        # 라 단순 헤더 클릭/우클릭(우클릭=필터 팝업)엔 영향 없다.
-        if (event.type() == QEvent.Type.MouseButtonRelease
-                and event.button() == Qt.MouseButton.LeftButton):
-            if obj is self.table_csv.horizontalHeader().viewport():
-                QTimer.singleShot(0, lambda: self._finalize_resize(True))
-            elif obj is self.table_csv.verticalHeader().viewport():
-                QTimer.singleShot(0, lambda: self._finalize_resize(False))
+        # 두 헤더 viewport 의 press/release 를 잡아 (1) 리사이즈 그립을 기억하고 (2) '드래그 종료 시
+        # 일괄 적용/숨김'을 트리거한다(QHeaderView 엔 종료 신호 없음). ⚠ 마우스 이벤트는 헤더가 아니라
+        # viewport 로 오므로 obj 도 viewport 와 비교한다. singleShot(0) 으로 헤더 자체 release 처리 직후
+        # (=최종 크기 확정 후) 실행. _pending_*/_resize_grip 둘 다 없으면 no-op 라 단순 클릭/우클릭엔 무영향.
+        et = event.type()
+        hv = self.table_csv.horizontalHeader().viewport()
+        vv = self.table_csv.verticalHeader().viewport()
+        if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            if obj is hv:
+                self._capture_resize_grip(True, event)
+            elif obj is vv:
+                self._capture_resize_grip(False, event)
+        elif et == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            if obj is hv or obj is vv:
+                p = event.position()
+                self._resize_release = (p.x(), p.y())     # release 시점 좌표(이후 사라짐) → 미리 캡처
+                QTimer.singleShot(0, lambda h=(obj is hv): self._finalize_resize(h))
         return super().eventFilter(obj, event)
 
+    def _capture_resize_grip(self, horizontal, event):
+        # press 가 리사이즈 그립(섹션 경계 ±몇 px) 위면 그 섹션·시작끝·원래 크기를 기억. 아니면 None.
+        # 그립이 잡는 섹션 = 경계의 '왼쪽/위' 섹션(엑셀과 동일, 그 섹션의 trailing 경계를 끈다).
+        header = self.table_csv.horizontalHeader() if horizontal else self.table_csv.verticalHeader()
+        p = event.position()
+        pos = p.x() if horizontal else p.y()
+        idx = self._section_at_grip(header, int(pos))
+        if idx is None:
+            self._resize_grip = None
+            return
+        self._resize_grip = (horizontal, idx, header.sectionViewportPosition(idx), header.sectionSize(idx))
+
+    @staticmethod
+    def _section_at_grip(header, pos, grip=6):
+        # pos(뷰포트 좌표) 근처 리사이즈 경계의 '왼쪽/위' 섹션 인덱스. 경계 ±grip 안일 때만, 아니면 None.
+        # 이 앱은 섹션 이동이 없어 visual==logical → logicalIndexAt 로 충분(O(1)).
+        li = header.logicalIndexAt(pos)
+        if li < 0:
+            return None
+        left = header.sectionViewportPosition(li)
+        right = left + header.sectionSize(li)
+        if right - pos <= grip and pos <= right + grip:   # li 의 trailing 경계 근처 → li 를 리사이즈
+            return li
+        if pos - left <= grip and li > 0:                  # li 의 leading 경계 근처(= li-1 trailing) → li-1
+            return li - 1
+        return None
+
     def _finalize_resize(self, horizontal):
-        # 드래그 종료: 잡았던 섹션이 '다중 완전선택'의 일원이면 나머지를 같은 크기로 맞춘다(엑셀 동작).
-        # 열은 전파 후 _width_timer 가 잠시 뒤 1단계로 기록(피어 포함), 행은 세션 한정이라 기록/저장 없음.
+        # 드래그 종료. 먼저 '숨기기 제스처'(경계를 그 섹션 시작 끝 너머로 = 음수 너비)인지 판정하고,
+        # 아니면 다중 완전선택 동시조정(엑셀)으로 전파한다.
+        grip, self._resize_grip = self._resize_grip, None
+        rel, self._resize_release = self._resize_release, None
         if horizontal:
             pending, self._pending_h = self._pending_h, None
         else:
             pending, self._pending_v = self._pending_v, None
+
+        # --- 숨기기 판정: 잡은 그립 섹션의 시작 끝(lead)보다 마우스가 임계값 이상 더 갔는가 ---
+        if grip is not None and grip[0] == horizontal and rel is not None:
+            _, gidx, lead, pre_size = grip
+            pos = rel[0] if horizontal else rel[1]
+            if pos - lead <= self.HIDE_DRAG_THRESHOLD_PX:
+                self._do_hide_gesture(horizontal, gidx, pre_size)
+                return
+
+        # --- 일반 리사이즈: 잡은 섹션이 다중 완전선택의 일원이면 나머지를 같은 크기로 전파 ---
         if pending is None:
             return
         idx, new = pending
@@ -1273,6 +1373,199 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         finally:
             hdr.setUpdatesEnabled(True)
             self._propagating = False
+
+    # ---------- 행/열 숨기기 (드래그-to-음수너비 트리거 + 마커 더블클릭 펼침) ----------
+    MARKER_SIZE_PX = 18        # 마커 섹션(⋯/︙) 고정 두께
+
+    def _do_hide_gesture(self, horizontal, idx, pre_size):
+        # 경계를 시작 끝 너머로 끈 결과: 잡은 섹션(+다중 완전선택이면 그 집합 전체)을 숨긴다(연속이면 마커 1개).
+        # idx 는 드래그로 최소폭까지 줄어 있으므로 '숨기기 전 원래 크기'는 pre_size 를 보관(펼칠 때 원복).
+        self._width_timer.stop()
+        self._height_timer.stop()
+        self._pending_h = None
+        self._pending_v = None
+        entry = self._current_edit_entry()
+        if entry is None:
+            return
+        proxy = entry['table_model']
+        sections = self._full_selection_sections(horizontal)
+        targets = sections if (len(sections) >= 2 and idx in sections) else {idx}
+        self._suppress_width_record = True
+        try:
+            if horizontal:
+                hdr = self.table_csv.horizontalHeader()
+                sizes = {}
+                for pc in targets:
+                    if proxy.is_delta_column(pc) or proxy.is_hidemark_column(pc):
+                        continue                                  # Δ/마커 열은 숨김 대상 아님(ⓓ)
+                    sc = proxy.source_column_of(pc)
+                    if sc >= 0:
+                        sizes[sc] = pre_size if pc == idx else hdr.sectionSize(pc)
+                if not sizes:
+                    return
+                wmap = self._col_width_map(proxy)                 # 펼쳐진(보이는) 열 너비 캡처(소스 기준)
+                self.table_csv.clearSelection()
+                proxy.hide_columns(set(sizes), sizes=sizes)
+                self._apply_col_width_map(proxy, wmap)            # reset 위치이동 보정 + 마커 얇게
+            else:
+                vhdr = self.table_csv.verticalHeader()
+                sizes = {}
+                for pr in targets:
+                    if proxy.is_hidemark_row(pr):
+                        continue
+                    sr = proxy.source_row_of(pr)
+                    if sr >= 0:
+                        sizes[sr] = pre_size if pr == idx else vhdr.sectionSize(pr)
+                if not sizes:
+                    return
+                old_positions, by_src = self._capture_row_layout(proxy)
+                self.table_csv.clearSelection()
+                proxy.hide_rows(set(sizes), sizes=sizes)            # 숨기기 전 높이 보관(펼칠 때 원복; 열과 대칭)
+                self._apply_row_layout(proxy, old_positions, by_src)
+        finally:
+            self._suppress_width_record = False
+        self.record_history({'fd', 'widths'} if horizontal else {'fd', 'rows'})
+
+    def _on_hcol_double_clicked(self, logical):
+        proxy = self.table_csv.model()
+        if proxy is not None and hasattr(proxy, "is_hidemark_column") and proxy.is_hidemark_column(logical):
+            self._unhide_columns(proxy.hidemark_column_run(logical))
+
+    def _on_vrow_double_clicked(self, logical):
+        proxy = self.table_csv.model()
+        if proxy is not None and hasattr(proxy, "is_hidemark_row") and proxy.is_hidemark_row(logical):
+            self._unhide_rows(proxy.hidemark_row_run(logical))
+
+    def _on_cell_double_clicked(self, index):
+        # 본문 셀 더블클릭(헤더를 못 맞춘 경우 대비). 마커 셀이면 그 구간 펼치기.
+        proxy = self.table_csv.model()
+        if proxy is None or not index.isValid():
+            return
+        if hasattr(proxy, "is_hidemark_column") and proxy.is_hidemark_column(index.column()):
+            self._unhide_columns(proxy.hidemark_column_run(index.column()))
+        elif hasattr(proxy, "is_hidemark_row") and proxy.is_hidemark_row(index.row()):
+            self._unhide_rows(proxy.hidemark_row_run(index.row()))
+
+    def _unhide_columns(self, src_cols):
+        entry = self._current_edit_entry()
+        if entry is None or not src_cols:
+            return
+        proxy = entry['table_model']
+        hdr = self.table_csv.horizontalHeader()
+        self._suppress_width_record = True
+        try:
+            wmap = self._col_width_map(proxy)               # 펼치기 전 보이는 열 너비
+            restored = proxy.unhide_columns(src_cols)       # {source_col: 숨기기 전 원래 너비}
+            self._apply_col_width_map(proxy, wmap)          # 기존 보이는 열 위치 보정 + 남은 마커 얇게
+            for sc, w in restored.items():                  # 펼쳐진 열은 원래 너비로
+                pc = proxy.proxy_column_of(sc)
+                if pc >= 0:
+                    hdr.resizeSection(pc, w)
+        finally:
+            self._suppress_width_record = False
+        self.record_history({'fd', 'widths'})
+
+    def _unhide_rows(self, src_rows):
+        entry = self._current_edit_entry()
+        if entry is None or not src_rows:
+            return
+        proxy = entry['table_model']
+        self._suppress_width_record = True
+        try:
+            old_positions, by_src = self._capture_row_layout(proxy)
+            restored = proxy.unhide_rows(src_rows)       # {source_row: 숨기기 전 원래 높이}
+            by_src.update(restored)                      # 펼쳐진 행은 원래 높이로(열과 대칭)
+            self._apply_row_layout(proxy, old_positions, by_src)
+        finally:
+            self._suppress_width_record = False
+        self.record_history({'fd', 'rows'})
+
+    def _col_width_map(self, proxy):
+        # 보이는 열 너비를 위치독립 키로 캡처: {('s',src_col)|('d',base_col): width}. 마커 제외.
+        # 숨김/펼침이 beginResetModel 로 섹션을 위치 기준 보존 → 열 수가 바뀌면 뒤 열이 밀려 어긋나므로
+        # 소스 기준으로 다시 적용한다(_apply_col_width_map). O(열 수)라 행 수와 무관.
+        hdr = self.table_csv.horizontalHeader()
+        out = {}
+        for pc in range(hdr.count()):
+            if proxy.is_hidemark_column(pc):
+                continue
+            sc = proxy.source_column_of(pc)
+            if sc < 0:
+                continue
+            out[('d', sc) if proxy.is_delta_column(pc) else ('s', sc)] = hdr.sectionSize(pc)
+        return out
+
+    def _apply_col_width_map(self, proxy, wmap):
+        # 캡처한 너비를 새 레이아웃 위치에 재적용 + 마커는 얇게. (_suppress_width_record 안에서 호출)
+        hdr = self.table_csv.horizontalHeader()
+        for (kind, sc), w in wmap.items():
+            base_pc = proxy.proxy_column_of(sc)
+            if base_pc < 0:
+                continue                                    # 숨겨진 열 → 보이는 위치 없음
+            pc = base_pc + 1 if kind == 'd' else base_pc    # Δ 는 기준 열 바로 오른쪽
+            if 0 <= pc < hdr.count():
+                hdr.resizeSection(pc, w)
+        for pc in proxy.marker_col_positions():
+            hdr.resizeSection(pc, self.MARKER_SIZE_PX)
+        self._fix_marker_sections(hdr, proxy.marker_col_positions())
+
+    def _fix_marker_sections(self, header, positions):
+        # 마커 섹션만 크기 고정(Fixed) — 사용자가 드래그로 리사이즈 못 하게(나머지는 Interactive).
+        # ⚠ 리사이즈 모드는 모델 reset 시 '위치 기준'으로 누수된다(펼친 자리 섹션이 Fixed 로 남음) →
+        #   글로벌 Interactive 로 한 번에 되돌린 뒤(측정 0.2ms, 18만 행도 무관·크기 보존) 현재 마커만 Fixed 로.
+        #   마커 없을 때 호출하면 스테일 Fixed 만 정리(전부 Interactive) → CSV 전환 시에도 안전.
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        for p in positions:
+            if 0 <= p < header.count():
+                header.setSectionResizeMode(p, QHeaderView.ResizeMode.Fixed)
+
+    def _capture_row_layout(self, proxy):
+        # reset 전 호출. 반환 (이전 비기본 proxy 행 위치 목록, {src_row: height}).
+        # ⚠ 모델 reset 은 섹션 크기를 '위치(proxy 인덱스) 기준'으로 보존한다 → 비기본 크기가 그 위치에 남아,
+        #   숨김으로 그 자리에 밀려든 다른 행이 엉뚱한 크기를 물려받는 '전염'이 생긴다(8~10 키우고 숨기면 11이
+        #   커지던 버그). 그래서 _apply_row_layout 이 reset 후 이 위치들을 기본으로 청소한다.
+        #   마커(18px)는 항상 비기본이라 _rows_dirty 무관하게 포함. 행 오버라이드는 _rows_dirty 일 때만 스캔.
+        #   (열은 _col_width_map 이 *모든* 보이는 열을 캡처·재적용해 전염이 원천 차단되므로 별도 청소 불필요.)
+        vhdr = self.table_csv.verticalHeader()
+        old_positions = list(proxy.marker_row_positions())
+        by_src = {}
+        if self._rows_dirty:
+            default = vhdr.defaultSectionSize()
+            for pr in range(vhdr.count()):
+                h = vhdr.sectionSize(pr)
+                if h != default:
+                    old_positions.append(pr)
+                    sr = proxy.source_row_of(pr)
+                    if sr >= 0:
+                        by_src[sr] = h
+        return old_positions, by_src
+
+    def _apply_row_layout(self, proxy, old_positions, size_map):
+        # reset 후 호출. 전염 청소(이전 비기본 위치→기본) → 소스 기준 높이 재적용 → 마커 18px.
+        # size_map = {src_row: height} (유지할 기존 오버라이드 + 펼침 복원분 합본).
+        vhdr = self.table_csv.verticalHeader()
+        default = vhdr.defaultSectionSize()
+        n = vhdr.count()
+        vhdr.setUpdatesEnabled(False)
+        dirty = False
+        try:
+            for p in old_positions:
+                if 0 <= p < n:
+                    vhdr.resizeSection(p, default)
+            for sr, h in size_map.items():
+                if h == default:
+                    continue
+                pr = proxy.proxy_row_of(sr)
+                if 0 <= pr < n:
+                    vhdr.resizeSection(pr, h)
+                    dirty = True
+            for pr in proxy.marker_row_positions():
+                if 0 <= pr < n:
+                    vhdr.resizeSection(pr, self.MARKER_SIZE_PX)
+            self._fix_marker_sections(vhdr, proxy.marker_row_positions())
+        finally:
+            vhdr.setUpdatesEnabled(True)
+        self._rows_dirty = dirty
 
     def _full_selection_sections(self, horizontal):
         # 선택에서 '완전히 선택된' 열(horizontal=True) 또는 행 집합을 selection 범위 분석으로 구한다.
@@ -1291,6 +1584,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
                 spans = [(t, b) for (t, b, l, r) in ranges if l <= c <= r]
                 if spans and self._spans_cover(spans, row_count):
                     cols.add(c)
+            # ⚠ 마커 열(⋯)은 선택 가능이라 완전선택에 잡히지만 동시조정/숨김 대상이 아님 → 제외
+            #   (안 빼면 전파 resizeSection 이 Fixed 마커까지 늘려버림 — Fixed 는 사용자 드래그만 막음).
+            if hasattr(model, "marker_col_positions"):
+                cols -= set(model.marker_col_positions())
             return cols
         # 행 전체 선택: 행 경계로 밴드를 나눠, 밴드를 덮는 range들의 열 구간이 모든 열을 덮으면 그 밴드의 행들
         rows = set()
@@ -1300,6 +1597,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             spans = [(l, r) for (t, bot, l, r) in ranges if t <= a and bot >= b - 1]
             if spans and self._spans_cover(spans, col_count):
                 rows.update(range(a, b))
+        if hasattr(model, "marker_row_positions"):    # 마커 행(︙) 제외(O(마커 수) — 18만 set 재순회 안 함)
+            rows -= set(model.marker_row_positions())
         return rows
 
     def _update_undo_buttons(self):

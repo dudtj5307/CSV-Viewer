@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QAbstractProxyModel, QModelIndex, Qt
 from PyQt6.QtGui import QFont, QBrush, QColor
 
-from utils.view_state import color_to_str, str_to_color
+from utils.view_state import color_to_str, str_to_color, pack_runs, unpack_runs
 
 
 class CSVFilterProxyModel(QAbstractProxyModel):
@@ -54,6 +54,23 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._delta_first_bg = QBrush(QColor(236, 236, 236))   # 'R(n)-R(n-1)' 첫칸 옅은 회색 배경
         self._FIRST_LABEL = "r(n)-r(n-1)"  # Δ 첫 행 안내 문구(스냅샷·배경·표시 한 곳에서 참조)
 
+        # --- 행/열 숨기기(hide) ---
+        # 숨김 = 위치(소스 인덱스) 기반 분석 상태. 값 기준 필터와 직교 — 보이는 행 = 필터통과 ∧ 비숨김.
+        # 숨겨진 연속 구간마다 가느다란 '마커 섹션' 1개(열=⋯, 행=︙)를 합성해 그 자리에 끼운다.
+        #  - 행 마커: _accepted[proxy_row] 에 음수 sentinel(-(run_id+1)) 로 표기, run_id→소스행들은 _row_marker_src.
+        #  - 열 마커: _col_kind[proxy_col] == 'hidemark', proxy_col→소스열들은 _col_marker_src.
+        self.hidden_rows = set()          # 숨긴 source_row 집합
+        self.hidden_cols = set()          # 숨긴 source_col 집합
+        # 펼칠 때 원래 크기 복원용 — 열너비·행높이 모두 숨기기 전 크기를 소스키로 보관(엑셀식, 열·행 대칭).
+        self.hidden_col_sizes = {}        # {source_col: 숨기기 전 열너비}
+        self.hidden_row_sizes = {}        # {source_row: 숨기기 전 행높이}
+        self._row_marker_src = {}         # {run_id: [source_row, ...]} - 행 마커가 대표하는 숨김 행들
+        self._row_marker_pos = []         # 마커인 proxy_row 목록(_scan_overrides skip 등 — 18만 재스캔 회피)
+        self._col_marker_src = {}         # {proxy_col: [source_col, ...]} - 열 마커가 대표하는 숨김 열들
+        self._HMARK_ROW = "︙"        # ︙ 행 마커 글리프 (안 보이면 이 상수만 교체)
+        self._HMARK_COL = "⋯"        # ⋯ 열 마커 글리프
+        self._hidemark_bg = QBrush(QColor(228, 228, 228))   # 마커 셀 본문 회색 배경
+
     # ---------- 소스 모델 연결 ----------
     def setSourceModel(self, model):
         if self._src is not None:
@@ -64,13 +81,20 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self.beginResetModel()
         super().setSourceModel(model)
         self._src = model
-        # 새 소스(다른 CSV) → 열 의미가 달라지므로 Δ 초기화
+        # 새 소스(다른 CSV) → 열/행 의미가 달라지므로 Δ·숨김 초기화
         self._delta_base = set()
         self._delta_snap = {}
         self.delta_filters = {}
         self._delta_color = {}
         self._delta_prev = {}
         self._delta_snap_filter = {}
+        self.hidden_rows = set()
+        self.hidden_cols = set()
+        self.hidden_col_sizes = {}
+        self.hidden_row_sizes = {}
+        self._row_marker_src = {}
+        self._row_marker_pos = []
+        self._col_marker_src = {}
         if model is not None:
             # QAbstractProxyModel 은 소스 시그널을 자동 전달하지 않으므로 직접 연결
             model.dataChanged.connect(self._on_source_data_changed)
@@ -102,72 +126,133 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self.beginResetModel()
         self._rebuild()
         self.endResetModel()
-        # 필터 표시(⧩) 갱신 - 해당 소스 열의 'src' 프록시 열 헤더 리페인트
+        # 필터 표시(⧩) 갱신 - 해당 소스 열의 'src' 프록시 열 헤더 리페인트 (숨긴 열이면 pcol=-1 → 스킵)
         pcol = self._src_to_pcol[column] if 0 <= column < len(self._src_to_pcol) else column
-        self.headerDataChanged.emit(Qt.Orientation.Horizontal, pcol, pcol)
+        if pcol >= 0:
+            self.headerDataChanged.emit(Qt.Orientation.Horizontal, pcol, pcol)
 
     def _rebuild(self):
-        """필터(열 값 필터 + Δ 값 필터)를 통과하는 source_row 목록(self._accepted)을 한 번에 계산."""
+        """보이는 source_row 목록(self._accepted)을 한 번에 계산. 보임 = (열/Δ 값 필터 통과) ∧ (숨김 아님).
+        숨김이 있으면 숨겨진 연속 구간마다 음수 sentinel 마커를 self._accepted 에 끼워 넣는다."""
         if self._src is None:
             self._accepted = range(0)
             self._src_to_proxy = None
             self._identity = True
+            self._row_marker_src = {}
+            self._row_marker_pos = []
             return
 
         rows = self._src.rows
-        if not self.column_filters and not self.delta_filters:
-            # 필터 없음 → 전 행 항등 매핑 (큰 list/dict 생성 회피)
+        hidden = self.hidden_rows
+        if not self.column_filters and not self.delta_filters and not hidden:
+            # 필터·숨김 없음 → 전 행 항등 매핑 (큰 list/dict 생성 회피)
             self._accepted = range(len(rows))
             self._src_to_proxy = None
             self._identity = True
+            self._row_marker_src = {}
+            self._row_marker_pos = []
             return
 
         src_active = list(self.column_filters.items())   # [(src_col, frozenset), ...]
         # Δ 값 필터: (스냅샷 dict, 숨길 값 집합) - 행 인덱스로 스냅샷 값을 조회해 판정
         delta_active = [(self._delta_snap.get(b, {}), h) for b, h in self.delta_filters.items()]
 
-        if not delta_active and len(src_active) == 1:
+        if not hidden and not delta_active and len(src_active) == 1:
             # 단일 열 값 필터(가장 흔한 경우) - 리스트 컴프리헨션이 가장 빠름
-            col, hidden = src_active[0]
-            accepted = [i for i, row in enumerate(rows) if row[col] not in hidden]
-        else:
-            accepted = []
-            ap = accepted.append
-            for i, row in enumerate(rows):
-                ok = True
-                for col, hidden in src_active:
-                    if row[col] in hidden:
-                        ok = False
-                        break
-                if ok:
-                    for snap, hidden in delta_active:
-                        if snap.get(i, "") in hidden:
-                            ok = False
-                            break
-                if ok:
-                    ap(i)
+            col, hide_vals = src_active[0]
+            accepted = [i for i, row in enumerate(rows) if row[col] not in hide_vals]
+            self._accepted = accepted
+            self._src_to_proxy = {s: p for p, s in enumerate(accepted)}
+            self._identity = False
+            self._row_marker_src = {}
+            self._row_marker_pos = []
+            return
+
+        def passes(i, row):
+            for col, h in src_active:
+                if row[col] in h:
+                    return False
+            for snap, h in delta_active:
+                if snap.get(i, "") in h:
+                    return False
+            return True
+
+        if not hidden:
+            accepted = [i for i, row in enumerate(rows) if passes(i, row)]
+            self._accepted = accepted
+            self._src_to_proxy = {s: p for p, s in enumerate(accepted)}
+            self._identity = False
+            self._row_marker_src = {}
+            self._row_marker_pos = []
+            return
+
+        # --- 숨김 있음: 보이는 행 사이의 'gap(숨긴 행 포함)'마다 마커 1개를 끼운다 ---
+        # 필터로만 빠진 행은 마커 run 에 넣지 않되 gap 은 계속 이어가 → 마커는 'gap당 1개'(연속 ⋯/︙ 1개).
+        accepted = []
+        src_to_proxy = {}
+        marker_src = {}
+        marker_pos = []
+        pending = []        # 직전 보이는 행 이후 숨긴 source_row 누적(= 현재 gap)
+        run_id = 0
+        ap = accepted.append
+        for i, row in enumerate(rows):
+            if i in hidden:
+                pending.append(i)
+                continue
+            if not passes(i, row):
+                continue
+            if pending:
+                marker_src[run_id] = pending
+                marker_pos.append(len(accepted))
+                ap(-(run_id + 1))
+                run_id += 1
+                pending = []
+            src_to_proxy[i] = len(accepted)
+            ap(i)
+        if pending:         # 마지막 trailing 숨김 run
+            marker_src[run_id] = pending
+            marker_pos.append(len(accepted))
+            ap(-(run_id + 1))
         self._accepted = accepted
-        self._src_to_proxy = {s: p for p, s in enumerate(accepted)}
+        self._src_to_proxy = src_to_proxy
         self._identity = False
+        self._row_marker_src = marker_src
+        self._row_marker_pos = marker_pos
 
     # ---------- 열 매핑(col_map) ----------
     def _rebuild_columns(self):
-        """_delta_base + 소스 열 수로부터 프록시 열 레이아웃을 재구성.
-        각 소스 열 바로 뒤에 그 열의 Δ(있으면)를 끼운다. 행과 무관하므로 필터 변경 시엔 호출하지 않는다."""
+        """_delta_base + 숨김 열 + 소스 열 수로부터 프록시 열 레이아웃을 재구성.
+        숨긴 소스 열은 레이아웃에서 빼고(연속 구간마다 'hidemark' 1개), 그 외엔 각 소스 열 뒤에 Δ(있으면)를
+        끼운다. 숨긴 소스 열은 그 Δ도 함께 빠진다(Δ는 소스를 따라감). 행과 무관 → 필터 변경 시엔 미호출."""
         self._col_kind = []
         self._col_src = []
+        self._col_marker_src = {}
         if self._src is None:
             self._src_to_pcol = []
             return
         S = self._src.columnCount()
-        self._src_to_pcol = [0] * S
+        self._src_to_pcol = [-1] * S          # 숨긴 소스 열은 -1(보이는 프록시 열 없음)
+        hidden = self.hidden_cols
+        pending = []                          # 연속 숨김 소스 열 누적(= 한 마커)
         for sc in range(S):
+            if sc in hidden:
+                pending.append(sc)
+                continue
+            if pending:
+                self._col_marker_src[len(self._col_kind)] = pending
+                self._col_kind.append('hidemark')
+                self._col_src.append(-1)
+                pending = []
             self._src_to_pcol[sc] = len(self._col_kind)
             self._col_kind.append('src')
             self._col_src.append(sc)
             if sc in self._delta_base:
                 self._col_kind.append('delta')
                 self._col_src.append(sc)
+        if pending:                           # trailing 숨김 열
+            self._col_marker_src[len(self._col_kind)] = pending
+            self._col_kind.append('hidemark')
+            self._col_src.append(-1)
 
     # ---------- 프록시 ↔ 소스 좌표 매핑 ----------
     def mapToSource(self, proxy_index):
@@ -177,9 +262,12 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         pc = proxy_index.column()
         if r < 0 or r >= len(self._accepted):
             return QModelIndex()
-        if pc < 0 or pc >= len(self._col_kind) or self._col_kind[pc] == 'delta':
-            return QModelIndex()   # Δ 열은 대응하는 소스 셀이 없음
-        return self._src.index(self._accepted[r], self._col_src[pc])
+        sr = self._accepted[r]
+        if sr < 0:
+            return QModelIndex()   # 행 마커는 대응하는 소스 셀이 없음
+        if pc < 0 or pc >= len(self._col_kind) or self._col_kind[pc] != 'src':
+            return QModelIndex()   # Δ 열·열 마커는 대응하는 소스 셀이 없음
+        return self._src.index(sr, self._col_src[pc])
 
     def mapFromSource(self, source_index):
         if not source_index.isValid():
@@ -193,6 +281,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return QModelIndex()
         sc = source_index.column()
         pc = self._src_to_pcol[sc] if 0 <= sc < len(self._src_to_pcol) else sc
+        if pc < 0:                 # 숨겨진 소스 열 → 보이는 프록시 열 없음
+            return QModelIndex()
         return self.createIndex(p, pc)
 
     # ---------- QAbstractItemModel 필수 구현 ----------
@@ -219,7 +309,16 @@ class CSVFilterProxyModel(QAbstractProxyModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or self._src is None:
             return None
+        r = index.row()
         pc = index.column()
+        # 마커 셀(행 마커 또는 열 마커): 빈 표시 + 회색 배경(글리프 ⋯/︙ 는 헤더가 그림)
+        if (0 <= r < len(self._accepted) and self._accepted[r] < 0) or \
+           (0 <= pc < len(self._col_kind) and self._col_kind[pc] == 'hidemark'):
+            if role == Qt.ItemDataRole.BackgroundRole:
+                return self._hidemark_bg
+            if role == Qt.ItemDataRole.DisplayRole:
+                return ""
+            return None
         if 0 <= pc < len(self._col_kind) and self._col_kind[pc] == 'delta':
             # Δ 열: 스냅샷 표시문자열 + italic 폰트 + 배경(사용자 색칠 우선, 없으면 첫칸 옅은 회색).
             if role == Qt.ItemDataRole.FontRole:
@@ -246,7 +345,12 @@ class CSVFilterProxyModel(QAbstractProxyModel):
     def flags(self, index):
         if not index.isValid() or self._src is None:
             return Qt.ItemFlag.NoItemFlags
+        r = index.row()
         pc = index.column()
+        # 마커 셀은 선택 가능(완전선택 판정·범위검색이 마커 위로도 연속되도록) + 활성(본문 더블클릭 펼침).
+        if (0 <= r < len(self._accepted) and self._accepted[r] < 0) or \
+           (0 <= pc < len(self._col_kind) and self._col_kind[pc] == 'hidemark'):
+            return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         if 0 <= pc < len(self._col_kind) and self._col_kind[pc] == 'delta':
             # Δ 열은 소스 셀이 없어 mapToSource 가 무효 → 선택/복사 위해 기본 플래그를 직접 부여
             return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
@@ -257,6 +361,11 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return None
         if orientation == Qt.Orientation.Horizontal:
             if not (0 <= section < len(self._col_kind)):
+                return None
+            if self._col_kind[section] == 'hidemark':
+                # 열 마커 헤더 = ⋯ (배경/회색 페인트는 FilterHeaderView.paintSection 가 담당)
+                if role == Qt.ItemDataRole.DisplayRole:
+                    return self._HMARK_COL
                 return None
             sc = self._col_src[section]
             if self._col_kind[section] == 'delta':
@@ -271,9 +380,14 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             if role == Qt.ItemDataRole.DisplayRole and sc in self.column_filters:
                 return f"⧩ {header}"
             return header
-        # 수직 헤더: 프록시 행 → 소스 행으로 매핑해 원본 행 번호를 유지
+        # 수직 헤더: 프록시 행 → 소스 행으로 매핑해 원본 행 번호를 유지 (행 마커는 ︙)
         if 0 <= section < len(self._accepted):
-            return self._src.headerData(self._accepted[section], orientation, role)
+            sr = self._accepted[section]
+            if sr < 0:
+                if role == Qt.ItemDataRole.DisplayRole:
+                    return self._HMARK_ROW
+                return None
+            return self._src.headerData(sr, orientation, role)
         return None
 
     # ---------- Δ(행간 차이) 가상 열 ----------
@@ -283,6 +397,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         if self._src is None or src_col in self._delta_base:
             return
         if not (0 <= src_col < self._src.columnCount()):
+            return
+        if self._src_to_pcol[src_col] < 0:       # 숨긴 열엔 Δ 추가 불가(보이는 위치가 없음)
             return
         pos = self._src_to_pcol[src_col] + 1     # 기준 'src' 열 바로 오른쪽
         self._snapshot(src_col)                  # 현재 보이는 행 기준으로 1회 고정
@@ -295,8 +411,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
     def remove_delta_column(self, src_col):
         if src_col not in self._delta_base:
             return
-        if src_col in self.delta_filters:
-            # Δ값 필터가 걸려 있었으면 그 필터가 숨기던 행이 되살아나 행 집합도 바뀐다 → 전체 리셋이 단순·안전
+        if src_col in self.delta_filters or self._src_to_pcol[src_col] < 0:
+            # Δ값 필터가 걸려 있었으면(행 집합 변동) 또는 기준 열이 숨겨져 Δ 위치가 없으면 → 전체 리셋이 단순·안전
             self.beginResetModel()
             self._delta_base.discard(src_col)
             self._delta_snap.pop(src_col, None)
@@ -330,8 +446,8 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self.beginResetModel()
         self._rebuild()
         self.endResetModel()
-        # ⧩ 표시 갱신 - Δ 열 헤더(기준 'src' 열 바로 오른쪽)
-        if 0 <= base < len(self._src_to_pcol) and base in self._delta_base:
+        # ⧩ 표시 갱신 - Δ 열 헤더(기준 'src' 열 바로 오른쪽; 기준 열이 숨겨졌으면 보일 게 없어 스킵)
+        if 0 <= base < len(self._src_to_pcol) and base in self._delta_base and self._src_to_pcol[base] >= 0:
             pcol = self._src_to_pcol[base] + 1
             self.headerDataChanged.emit(Qt.Orientation.Horizontal, pcol, pcol)
 
@@ -371,9 +487,110 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return f"Δ [{base}]"
         return base
 
+    # ---------- 행/열 숨기기 ----------
+    # 숨김 좌표는 소스 인덱스 기준(정렬·필터와 무관하게 안정). 구조 변경이라 beginResetModel 로 알린다
+    # (행/열 다수 → 마커 1개로 접히는 비단순 변경이라 insert/remove 보다 reset 이 단순·안전. 뷰는 보이는 셀만 다시 그림).
+    def hide_columns(self, src_cols, sizes=None):
+        """src_cols(소스 열들)를 숨긴다. sizes={src_col: 숨기기 전 너비} 면 펼칠 때 원복용으로 보관."""
+        if self._src is None:
+            return
+        add = {c for c in src_cols if 0 <= c < self._src.columnCount()} - self.hidden_cols
+        if not add:
+            return
+        self.beginResetModel()
+        self.hidden_cols |= add
+        if sizes:
+            self.hidden_col_sizes.update({c: sizes[c] for c in add if c in sizes})
+        self._rebuild_columns()
+        self.endResetModel()
+
+    def unhide_columns(self, src_cols):
+        """src_cols 중 숨김 상태인 것을 펼친다. 반환: {source_col: 보관해 둔 원래 너비}(GUI 가 복원)."""
+        rem = self.hidden_cols & {c for c in src_cols}
+        if not rem:
+            return {}
+        sizes = {c: self.hidden_col_sizes.pop(c) for c in rem if c in self.hidden_col_sizes}
+        self.beginResetModel()
+        self.hidden_cols -= rem
+        self._rebuild_columns()
+        self.endResetModel()
+        return sizes
+
+    def hide_rows(self, src_rows, sizes=None):
+        """src_rows(소스 행들)를 숨긴다. sizes={src_row: 숨기기 전 높이} 면 펼칠 때 원복용으로 보관(열과 대칭)."""
+        if self._src is None:
+            return
+        add = {r for r in src_rows if 0 <= r < len(self._src.rows)} - self.hidden_rows
+        if not add:
+            return
+        self.beginResetModel()
+        self.hidden_rows |= add
+        if sizes:
+            self.hidden_row_sizes.update({r: sizes[r] for r in add if r in sizes})
+        self._rebuild()
+        self.endResetModel()
+
+    def unhide_rows(self, src_rows):
+        """src_rows 중 숨김 상태인 것을 펼친다. 반환: {source_row: 보관해 둔 원래 높이}(GUI 가 복원)."""
+        rem = self.hidden_rows & {r for r in src_rows}
+        if not rem:
+            return {}
+        sizes = {r: self.hidden_row_sizes.pop(r) for r in rem if r in self.hidden_row_sizes}
+        self.beginResetModel()
+        self.hidden_rows -= rem
+        self._rebuild()
+        self.endResetModel()
+        return sizes
+
+    def has_hidden(self):
+        return bool(self.hidden_rows or self.hidden_cols)
+
+    def is_hidemark_column(self, proxy_col):
+        return 0 <= proxy_col < len(self._col_kind) and self._col_kind[proxy_col] == 'hidemark'
+
+    def is_hidemark_row(self, proxy_row):
+        return 0 <= proxy_row < len(self._accepted) and self._accepted[proxy_row] < 0
+
+    def hidemark_column_run(self, proxy_col):
+        # 그 열 마커가 대표하는 숨김 소스 열들(더블클릭 펼침용). 마커가 아니면 빈 리스트.
+        return list(self._col_marker_src.get(proxy_col, []))
+
+    def hidemark_row_run(self, proxy_row):
+        # 그 행 마커가 대표하는 숨김 소스 행들. 마커가 아니면 빈 리스트.
+        if 0 <= proxy_row < len(self._accepted):
+            sr = self._accepted[proxy_row]
+            if sr < 0:
+                return list(self._row_marker_src.get(-sr - 1, []))
+        return []
+
+    def marker_col_positions(self):
+        # 열 마커인 proxy_col 목록 (열너비 저장 시 스캔 제외용).
+        return list(self._col_marker_src.keys())
+
+    def marker_row_positions(self):
+        # 행 마커인 proxy_row 목록 (행높이 저장 시 스캔 제외용 — 18만 행 재스캔 회피).
+        return list(self._row_marker_pos)
+
+    def proxy_column_of(self, src_col):
+        # 소스 열 → 보이는 프록시 'src' 열 (숨김이면 -1). 펼친 뒤 원래 너비를 그 위치에 복원할 때 사용.
+        return self._src_to_pcol[src_col] if 0 <= src_col < len(self._src_to_pcol) else -1
+
+    def proxy_row_of(self, src_row):
+        # 소스 행 → 보이는 프록시 행 (숨김/필터로 안 보이면 -1).
+        if self._identity:
+            return src_row if 0 <= src_row < len(self._accepted) else -1
+        return self._src_to_proxy.get(src_row, -1)
+
+    def source_row_of(self, proxy_row):
+        # 보이는 프록시 행 → 소스 행 (행 마커/범위 밖이면 -1).
+        if 0 <= proxy_row < len(self._accepted):
+            sr = self._accepted[proxy_row]
+            return sr if sr >= 0 else -1
+        return -1
+
     def _snapshot(self, base):
-        """현재 보이는 행(self._accepted) 기준으로 base 의 Δ 스냅샷을 고정."""
-        self._compute_snapshot(base, self._accepted)
+        """현재 보이는 행 기준으로 base 의 Δ 스냅샷을 고정 (행 마커 sentinel 은 제외하고 실제 소스 행만)."""
+        self._compute_snapshot(base, [sr for sr in self._accepted if sr >= 0])
 
     def _compute_snapshot(self, base, accepted):
         """accepted(보이는 source_row, 오름차순) 순서로 base 열의 Δ 값+짝을 1회 계산해 고정.
@@ -513,7 +730,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         if n == 0:
             return
         for base in bases:
-            if base in self._delta_base and 0 <= base < len(self._src_to_pcol):
+            if base in self._delta_base and 0 <= base < len(self._src_to_pcol) and self._src_to_pcol[base] >= 0:
                 pcol = self._src_to_pcol[base] + 1
                 self.dataChanged.emit(self.createIndex(0, pcol),
                                       self.createIndex(n - 1, pcol),
@@ -559,12 +776,16 @@ class CSVFilterProxyModel(QAbstractProxyModel):
     def export_state(self):
         """저장용 상태(열 값 필터 + Δ 정의). 행 리스트 없이 '필터(원인)'만 → 18만 행도 수십 byte.
         highlights/col_widths/scroll 은 뷰 소유라 GUI 가 따로 담는다.
-        반환: {'column_filters': [...], 'deltas': [...]} (JSON 직렬화 가능 평면 구조)."""
+        반환: {'column_filters': [...], 'deltas': [...], 'hidden_*': ...} (JSON 직렬화 가능 평면 구조)."""
         return {
             "column_filters": [
                 {"col": col, "hidden": sorted(hidden)}
                 for col, hidden in self.column_filters.items()
             ],
+            "hidden_rows": pack_runs(self.hidden_rows),     # 숨김(위치 기반) — 연속구간 run 인코딩
+            "hidden_cols": pack_runs(self.hidden_cols),
+            "hidden_col_sizes": {str(c): w for c, w in self.hidden_col_sizes.items()},  # 숨기기 전 너비/높이(열·행 대칭)
+            "hidden_row_sizes": {str(r): h for r, h in self.hidden_row_sizes.items()},
             "deltas": [
                 {
                     "base": base,
@@ -630,7 +851,15 @@ class CSVFilterProxyModel(QAbstractProxyModel):
                     cmap[sr] = color
             if cmap:
                 self._delta_color[base] = cmap
-        # 3) 열 레이아웃 + 통과 행 재계산
+        # 3) 숨김(위치 기반) — 소스 좌표라 안정. 범위 밖은 방어적으로 무시.
+        nrows = len(self._src.rows)
+        self.hidden_cols = {c for c in unpack_runs(state.get("hidden_cols", [])) if 0 <= c < ncols}
+        self.hidden_rows = {r for r in unpack_runs(state.get("hidden_rows", [])) if 0 <= r < nrows}
+        self.hidden_col_sizes = {int(c): w for c, w in (state.get("hidden_col_sizes") or {}).items()
+                                 if str(c).lstrip("-").isdigit() and 0 <= int(c) < ncols}
+        self.hidden_row_sizes = {int(r): h for r, h in (state.get("hidden_row_sizes") or {}).items()
+                                 if str(r).lstrip("-").isdigit() and 0 <= int(r) < nrows}
+        # 4) 열 레이아웃 + 통과 행 재계산 (숨김·필터·Δ 모두 반영)
         self._rebuild_columns()
         self._rebuild()
         self.endResetModel()

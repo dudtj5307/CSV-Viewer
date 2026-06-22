@@ -7,6 +7,50 @@ from PyQt6.QtGui import QIcon, QFont, QColor
 from GUI.gui_filter import FilterWidget
 
 
+def _paint_hidemark(painter, rect, text, orientation):
+    """숨김 마커 섹션(⋯/︙)을 회색 배경 + 글리프로 그린다. 가로/세로 헤더 공용.
+      - 가로(열 ⋯): 가운데 정렬 + 볼드(좁은 마커라 작아 보여 강조).
+      - 세로(행 ︙): 우측 정렬(행 번호와 동일하게 오른쪽에 붙임 — 여백 4px).
+    ⚠ 글리프 자체 렌더는 offscreen 미검증 → 실Windows 육안(기존 헤더 폰트와 동일 한계)."""
+    painter.save()
+    painter.fillRect(rect, QColor(228, 228, 228))       # 일반 헤더(240)보다 어둡게
+    painter.setPen(QColor(170, 170, 170))               # 섹션 구분선
+    if orientation == Qt.Orientation.Horizontal:
+        painter.drawLine(rect.topRight(), rect.bottomRight())
+    else:
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+    font = QFont(painter.font())
+    font.setBold(True)
+    painter.setPen(QColor(90, 90, 90))
+    if orientation == Qt.Orientation.Horizontal:
+        font.setPointSize(15)
+        painter.setFont(font)
+        painter.drawText(rect, int(Qt.AlignmentFlag.AlignCenter), text)
+    else:
+        painter.setFont(font)                           # 행 ︙ 은 우측 정렬(행 번호와 동일)
+        painter.drawText(rect.adjusted(0, 0, -4, 0),
+                         int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), text)
+    painter.restore()
+
+
+class MarkerVHeaderView(QHeaderView):
+    """테이블의 커스텀 수직(행) 헤더. 기능은 기본 헤더와 동일하되, 행 마커(숨긴 행들이 접힌 ︙
+    섹션)만 회색 + 가운데 ︙ 로 그린다. (가로 헤더 FilterHeaderView 와 대칭 — 글리프 페인트 전용.)
+    숨김 트리거(경계 드래그)·펼침(더블클릭)은 ViewerWindow 가 viewport eventFilter / sectionDoubleClicked
+    로 처리하므로 여기선 페인트만 담당한다. 세로 헤더는 열 수(few)만 훑어 18만 행 함정과 무관."""
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setSectionsClickable(True)
+
+    def paintSection(self, painter, rect, logicalIndex):
+        model = self.model()
+        if model is not None and hasattr(model, "is_hidemark_row") and model.is_hidemark_row(logicalIndex):
+            text = model.headerData(logicalIndex, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole)
+            _paint_hidemark(painter, rect, str(text or "︙"), Qt.Orientation.Vertical)
+            return
+        super().paintSection(painter, rect, logicalIndex)
+
+
 class FilterHeaderView(QHeaderView):
     """테이블(table_csv)의 커스텀 수평 헤더(QHeaderView).
 
@@ -33,6 +77,13 @@ class FilterHeaderView(QHeaderView):
         self.setStyleSheet("QHeaderView::section { background-color: rgb(240, 240, 240); }")
 
     def paintSection(self, painter, rect, logicalIndex):
+        # 열 마커(숨긴 열들이 접힌 ⋯ 섹션): 회색 + 가운데 ⋯. 선택/필터/Δ 스타일 분기 전에 처리하고 반환.
+        model = self.model()
+        if model is not None and hasattr(model, "is_hidemark_column") and model.is_hidemark_column(logicalIndex):
+            text = model.headerData(logicalIndex, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+            _paint_hidemark(painter, rect, str(text or "⋯"), Qt.Orientation.Horizontal)
+            return
+
         # 열 헤더 폰트 스타일링: 선택 열 / 필터 걸린 열 → Bold, Δ(행간 차이) 열 → Italic.
         # ⚠ 왜 paintSection 인가: `QHeaderView::section` 스타일시트가 걸리면 렌더러가 QStyleSheetStyle
         #   로 바뀌어 (1) 선택 섹션의 native bold 와 (2) headerData FontRole 을 둘 다 무시한다
@@ -126,6 +177,10 @@ class FilterHeaderView(QHeaderView):
             return
         source_model = model.sourceModel()
         if source_model is None:
+            return
+
+        # 열 마커(⋯) 우클릭은 필터 대상이 아님 → 무시(펼치기는 더블클릭으로)
+        if hasattr(model, "is_hidemark_column") and model.is_hidemark_column(self.current_col):
             return
 
         # 클릭한 프록시 열을 소스 열로 변환 (Δ 열이면 그 기준 열). 이후 필터/색칠은 전부 소스 열 기준.

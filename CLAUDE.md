@@ -35,7 +35,7 @@ Project_CSV_Viewer/
 ├── CSV_Viewer.spec            # PyInstaller 빌드 (onedir, windowed)
 ├── GUI/
 │   ├── gui_viewer.py          # ViewerWindow - CSV 목록 + 테이블 뷰어 (메인 화면)
-│   ├── gui_header.py          # FilterHeaderView - 테이블 가로 헤더(우클릭→필터 팝업 띄움)
+│   ├── gui_header.py          # FilterHeaderView - 가로 헤더(우클릭→필터 팝업, 열 마커 ⋯ 페인트) + MarkerVHeaderView - 세로 헤더(행 마커 ︙ 페인트)
 │   ├── gui_filter.py          # FilterWidget - 우클릭 필터 팝업창(체크박스 필터 UI)
 │   ├── res/                   # 아이콘/스피너 리소스 (png · ico · gif)
 │   └── ui/                    # pyuic6 자동생성 UI 파일 (직접 수정 금지)
@@ -82,10 +82,11 @@ csv_viewer.py main()
 |--------|------|------|
 | `main()` | csv_viewer.py | 진입점. 인자 폴더면 바로 열고, 없으면 빈 창 + 폴더 선택창(취소 시 빈 화면 유지) |
 | `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder=None)`** (None=빈 상태) |
-| `FilterHeaderView` | gui_header.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 (`FilterWidget` 사용) |
+| `FilterHeaderView` | gui_header.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 (`FilterWidget` 사용). 열 마커(⋯) 페인트 |
+| `MarkerVHeaderView` | gui_header.py | 커스텀 수직 헤더. 행 마커(︙) 페인트 전용(가로 헤더와 대칭). 숨김 트리거/펼침은 `ViewerWindow`가 처리 |
 | `FilterWidget` | gui_filter.py | 체크박스 기반 필터 팝업창 |
 | `CSVTableModel` | utils/table_model.py | QAbstractTableModel. rows + highlight_cells |
-| `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map) (아래 ⚠) |
+| `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열 + **행/열 숨기기**. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map), hidden_rows/cols(소스 좌표)+마커 섹션(⋯/︙) (아래 ⚠) |
 | `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
 | `CSVLoaderThread` | utils/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠). 캐시 무효화용 지문(`signature`=stat, `content_hash`=sha256)도 스레드에서 계산해 `t.signature/t.content_hash`로 노출 |
 | `view_state` (모듈) | utils/view_state.py | 분석 결과 영속화. `<CSV폴더>\.viewer`(폴더당 1 JSON)에 사용자 입력만 저장/로드. 원자적 쓰기(temp→os.replace)·머지, QColor↔'#rrggbb', envelope/version 게이트 (아래 ⚠ 변경 이력) |
@@ -166,6 +167,21 @@ CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) 
 ---
 
 ## 변경 이력 (최신이 위, 한두 줄 요약)
+
+- **행/열 숨기기(hide) — 드래그-to-음수너비 트리거 + 합성 마커 섹션(⋯/︙) + 더블클릭 펼침**: 엑셀식 행/열 숨기기. 값 기준 필터와 **직교하는 '위치(소스 인덱스) 기반' 분석 상태**(`hidden_rows`/`hidden_cols`, 소스 좌표)를 프록시에 추가하고, 숨겨진 **연속 구간마다 가느다란 마커 섹션 1개**(열=`⋯`, 행=`︙`, 18px 회색)를 합성해 그 자리에 끼운다. 트리거=섹션 경계를 그 섹션 시작 끝 너머로 드래그(음수 너비/높이), 펼침=마커 더블클릭. Δ 가상열·필터(`_accepted`)·Undo(`fd` 슬라이스)·`.viewer` 플럼빙을 **그대로 재사용**. 신설/수정: `filter_model`(hidden 상태·마커 합성·hide/unhide API·export/restore), `gui_header`(`MarkerVHeaderView` 신설 + 가로 마커 페인트 + 마커 우클릭 무시), `gui_viewer`(드래그 감지·펼침·너비 캡처/복원), `view_state`(`pack_runs`/`unpack_runs`·schema 3), `search_model`(마커 행 스킵).
+  - ⚠ **마커 = 모델 합성 섹션(방안 A)**: 열=`_col_kind` 에 `'hidemark'` 추가(Δ 패턴과 대칭, `_col_marker_src`), 행=`_accepted` 에 **음수 sentinel `-(run_id+1)`** 끼움(run_id→소스행은 `_row_marker_src`, 마커 proxy행은 `_row_marker_pos`). `mapToSource`/`data`/`flags`/`headerData` 가 마커 분기. **마커 셀은 선택 가능**(완전선택 판정·범위검색이 마커 위로 연속되게) + 빈 표시 + 회색 배경. `_compute_snapshot`(Δ)엔 sentinel 제외한 실제 소스행만 넘긴다. 마커 글리프 페인트(`gui_header._paint_hidemark`): **열 `⋯`=가운데+볼드**(좁아 작아 보여 강조), **행 `︙`=우측 정렬**(행 번호와 동일하게 오른쪽에 붙임).
+  - ⚠ **트리거 = 마우스 geometry(클램프된 크기 아님)**: Qt `sectionResized` 는 `minimumSectionSize` 로 클램프돼 **음수를 안 준다** → press 때 리사이즈 그립(`_capture_resize_grip`/`_section_at_grip`)을 잡고, release 때 `attempted = 마우스좌표 − 섹션시작끝 ≤ -2px`(`HIDE_DRAG_THRESHOLD_PX`)면 숨김. **최소폭과 무관**(기본 16px 그대로 — 5px 로 낮췄다가 너무 작아 복원; 측정값 16px). 이미 최소폭인 섹션도 press 로 잡아 숨길 수 있다. ⚠⚠ **반드시 헤더 `viewport()` 에 eventFilter**(헤더 객체엔 마우스 이벤트 안 옴 — 기존 동시조정 함정과 동일). 다중 완전선택이면 그 집합 전체 숨김(연속이면 마커 1개) — `_full_selection_sections` 재사용(18만 행 `selected*()` 함정 회피).
+  - ⚠ **모델 reset 은 섹션 크기를 '위치(proxy 인덱스) 기준'으로 보존**(측정 확인) → '전염' 버그: 열 수가 바뀌면(2열→마커1개) 뒤 섹션이 밀려, 숨긴 섹션이 있던 위치의 비기본 크기를 **밀려든 다른 섹션이 물려받는다**(예: 8~10행 높이 50으로 키우고 숨기면 11행이 50으로 커짐). 해결: 숨김/펼침 시 **소스 기준으로 캡처·복원**.
+    - **열**: `_col_width_map` 이 *모든* 보이는 열을 캡처→`_apply_col_width_map` 이 *전부* 재적용 → 위치 누수가 원천적으로 덮여 전염 없음(Δ는 base+1). 열은 수 적어 전수 캡처 OK.
+    - **행**: 18만 행을 전수 캡처할 수 없어 다른 전략 — `_capture_row_layout` 이 reset *전* '비기본 행 위치'(마커는 항상 포함, 오버라이드는 `_rows_dirty` 일 때만 스캔)를 기억해 두고, `_apply_row_layout` 이 reset *후* 그 위치들을 기본으로 **청소**한 뒤 소스 기준 높이를 재적용 → 전염 제거. (열처럼 전수 재적용이 아니라 '이전 비기본 위치만 청소'가 핵심.)
+    - 마커는 항상 18px 명시(`MARKER_SIZE_PX`). `update_table`·`_restore_memento` 도 마커 18px 재설정. 저장(`_scan_overrides`)은 **마커 섹션 skip**.
+    - **마커 = 크기 고정(Fixed 리사이즈 모드)**: 사용자가 마커 경계를 드래그해 리사이즈 못 하게 마커 섹션만 `Fixed`, 나머지는 `Interactive`(`_fix_marker_sections`, 마커 사이징하는 4곳에서 호출). ⚠ **리사이즈 모드도 크기처럼 reset 시 '위치 기준' 누수**(펼친 자리 섹션이 Fixed 로 남음) → **글로벌 `setSectionResizeMode(Interactive)` 로 한 번에 되돌린 뒤 현재 마커만 Fixed**(측정 0.2ms·18만 행 무관·크기 보존). 마커 없을 때 호출하면 스테일 Fixed 정리(CSV 전환·F5 안전).
+    - ⚠ **Fixed 는 사용자 드래그만 막고 프로그램적 `resizeSection` 은 못 막는다** → 다중선택 동시조정 전파(`_finalize_resize`)가 마커를 함께 늘리던 엣지케이스 있었음. `_full_selection_sections` 가 **마커 위치를 결과에서 빼**(`marker_*_positions()` set 차집합, O(마커 수)) 전파·다중숨김 대상에서 제외해 해결.
+  - ⚠ **펼침 크기 정책 = 열·행 모두 원래 크기 복원(엑셀식, 대칭)**: 숨기기 전 크기를 소스키로 보관(`hidden_col_sizes`/`hidden_row_sizes`) → 더블클릭 펼침 시 원복, `.viewer` 저장 대상. (초기엔 '행=기본높이'였다가 사용자 요청으로 **열과 동일하게 원복**으로 통일 — 직전 정책 뒤집음.) ⚠ 숨길 때 보관하는 '원래 크기'는 **press 시점(드래그로 줄어들기 전)** 크기(`pre_size`)라, 드래그-숨김으로 섹션이 최소폭까지 줄어도 정확. ⚠ '리사이즈 직후 350ms 내 즉시 숨김'의 극히 드문 경우만 그 리사이즈가 Undo 히스토리에 별도 커밋되기 전이라 *Undo* 가 직전 커밋 크기로 가지만, **더블클릭 펼침은 `hidden_*_sizes` 라 항상 원복**.
+  - ⚠ **필터 ∧ 숨김 직교**: 보임 = 필터통과 ∧ 비숨김(`_rebuild` 에 `i not in hidden_rows`, `_rebuild_columns` 에서 숨긴 열 skip). 숨김은 **필터 도메인 불간섭**(`_row_passes`·드롭다운 후보값은 hidden 무시) · **숨긴 열의 행-필터는 유지**(⧩, 펼치면 복귀) · **마커는 숨김 차원만 표시**(필터로만 빠진 행엔 마커 없음; 규칙="보이는 두 행 사이 gap 에 숨긴 행 ≥1 → 마커 1개"라 필터로 빠진 행이 끼어도 1개로 병합). 더블클릭 펼침은 그 gap 의 `hidden_rows` 만 해제(필터는 그대로 적용).
+  - ⚠ **Δ 는 소스 따라감(ⓓ)**: 기준 소스 열을 숨기면 그 Δ 도 함께 숨김(`_rebuild_columns` 가 숨긴 sc 에서 `continue` → src·delta 둘 다 빠짐). Δ 열 자체의 드래그-숨김은 무시(`_do_hide_gesture` 가 `is_delta_column` 걸러냄 → Δ 제거는 기존 X 버튼). 숨긴 base 의 `_src_to_pcol = -1` 이라 `add/remove_delta`·`setFilterForColumn`·`_emit_delta_bg` 등에 `>= 0` 가드 추가.
+  - ⚠ **검색/복사 마커 제외**: `source_columns()` 가 마커 열을 `-1`(Δ와 동일)로 → 검색 자동 스킵. 검색은 **마커 행도 스킵**(`mapToSource` 무효→`row()<0`→`rows[-1]` 음수인덱스 오접근 방지). 복사는 마커 열을 `cols` 에서 제외 + 마커 행(`accepted[r]<0`) 스킵.
+  - ⚠ 검증: offscreen 종합(모델 export/restore[양축 크기보관]·필터∧숨김 gap병합·Δ따라감 / GUI 열·행 숨김·너비·높이 보존·**펼침 양축 원복**·**전염 없음**[8~10 키우고 숨겨도 11 불변]·다중선택 동시숨김·Undo/Redo·reset·`.viewer` 자동복원·**`QTest` 실 마우스 드래그→숨김**[viewport eventFilter 회귀]) PASS. **마커 글리프(⋯/︙) 렌더·드래그 손맛은 실Windows 육안 최종**(offscreen 글리프 미렌더).
 
 - **폴더 버튼(`button_csv_folder`) = 폴더 선택창 → Windows 탐색기 열기로 변경**: 클릭 시 폴더 선택 다이얼로그 대신 `edit_csv_path`(=`csv_folder_path`, 상위 경로)를 `os.startfile`로 탐색기 새 창에 연다. 경로가 비었거나 더 이상 존재하지 않으면 `_app_dir()`(frozen=`dirname(sys.executable)`, 개발=`dirname(abspath(sys.argv[0]))`)로 대체. 신설 `open_folder_in_explorer`/`_app_dir`(`gui_viewer`) + 버튼 connect 교체 + 툴팁("Open folder in Explorer") + `import sys`.
   - ⚠ **`open_csv_folder`(폴더 선택창)는 그대로 유지** — 빈 창 시작(`csv_viewer.py`의 `QTimer.singleShot(0, open_csv_folder)`)과 `edit_csv_path` **텍스트 클릭**(`mousePressEvent`)이 계속 사용. 즉 폴더 변경 수단은 (a) 경로 텍스트 클릭=선택창, (b) 드래그&드롭으로 유지되고 **버튼만** 탐색기로 바뀜. (버튼↔텍스트클릭이 과거엔 '동일 동작'이었으나 이제 의도적으로 분리 — 해당 주석도 갱신.)

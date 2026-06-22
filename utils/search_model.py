@@ -131,6 +131,8 @@ class SearchModel(QObject):
                 if scope_cols is None and scope_rows is not None and proxy_row not in scope_rows:
                     continue
                 source_row = map_to_source(proxy_index(proxy_row, 0)).row()
+                if source_row < 0:          # 행 마커(숨김) 등 소스 셀 없는 행은 검색 제외
+                    continue
                 row_data = rows[source_row]
                 row_selected = scope_rows is not None and proxy_row in scope_rows
                 for col in range(col_count):
