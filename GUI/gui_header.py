@@ -48,6 +48,9 @@ class MarkerVHeaderView(QHeaderView):
             text = model.headerData(logicalIndex, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole)
             _paint_hidemark(painter, rect, str(text or "︙"), Qt.Orientation.Vertical)
             return
+        # 행 번호 글자도 줌을 따라가게 헤더 폰트를 painter 에 주입(가로 헤더와 대칭).
+        # ⚠ 세로 헤더에 스타일시트가 걸려 super().paintSection 이 위젯 setFont 를 그대로 안 따르므로 명시 주입.
+        painter.setFont(QFont(self.font()))
         super().paintSection(painter, rect, logicalIndex)
 
 

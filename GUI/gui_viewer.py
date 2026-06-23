@@ -5,7 +5,7 @@ import hashlib
 from bisect import bisect_right
 
 from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect, QHeaderView
-from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie
+from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie, QFont
 from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
 
 from utils.table_model import CSVTableModel
@@ -32,13 +32,34 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
     # 숨기기 트리거: 섹션 경계를 그 섹션의 시작 끝(왼쪽/위)보다 이만큼(px) 더 끌면 숨김.
     # 음수 = '0 너비를 넘어 마이너스로'. -2 라 끝에 딱 붙이는 정도(0~)는 그냥 최소폭으로 남고, 2px 더 밀어야 숨김.
-    HIDE_DRAG_THRESHOLD_PX = -2
+    # 실제 사용해보니 반대로 +15까지만 밀어도 접히는게 더 사용자 친화적
+    HIDE_DRAG_THRESHOLD_PX = 20
+
+    # ---------- 확대/축소(Ctrl + 마우스 휠) ----------
+    # 5단계 줌(아주작게/작게/중간/크게/아주크게). 인덱스 2 = 100%(기본, 항상 여기서 시작 — 저장 안 함).
+    # 아래 배열들은 '단계별 절대값'이라 직접 수정하며 테스트할 수 있다(행높이/열너비/마커두께/폰트크기).
+    # ⚠ 인덱스 2 는 현재(100%) 기본값과 같게 유지할 것: 열=80·행=20·마커=18(폰트는 base 폰트를 그대로 사용).
+    ZOOM_PERCENT     = [50, 75, 100, 125, 150]   # 우상단 오버레이에 표시할 숫자(%)
+    ZOOM_FONT_PT     = [6,  8,  10,  12,  14]    # 셀/헤더 글자 크기(pt) — 인덱스 2 가 100% 기준
+    ZOOM_ROW_HEIGHT  = [13, 16, 20,  24,  32]    # 행 높이(px)  (기본 20)
+    ZOOM_COL_WIDTH   = [54, 72, 80,  100, 120]    # 열 너비(px)  (기본 80)
+    ZOOM_MARKER_PX   = [12, 15, 18,  23,  28]    # 숨김 마커(⋯/︙) 두께(px) (기본 18) — 델타·숨김열도 줌 적용(req7)
+    ZOOM_VHEADER_W   = [34, 44, 48,  62,  72]    # 좌측 행번호(세로 헤더) 칸 폭(px) (기본 48)
+    ZOOM_DEFAULT_INDEX = 2
+
+    @property
+    def MARKER_SIZE_PX(self):
+        # 마커 섹션(⋯/︙) 두께 — 줌 단계에 연동(숨김 열/행이 확대/축소를 함께 따라가게).
+        # 예전엔 고정 18 상수였으나 property 로 바꿔 마커를 다루는 모든 호출부가 자동으로 줌을 따른다.
+        return self.ZOOM_MARKER_PX[self._zoom_index]
 
     def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
         self.setupUi(self)
 
         self.icon_path = icon_path       # GUI/res 리소스 경로 (백엔드가 주입)
+
+        self._zoom_index = self.ZOOM_DEFAULT_INDEX   # 현재 줌 단계(MARKER_SIZE_PX property 가 참조 → 일찍 설정)
 
         self.setWindowFlags(Qt.WindowType.Window)
         self.setAcceptDrops(True)        # CSV 폴더를 창에 드롭하면 새로 로드
@@ -161,10 +182,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.table_csv.setItemDelegate(self.border_delegate)
         self._wired_sel_model = None     # 핸들러를 연결한 selectionModel 추적(setModel 마다 새로 생겨 중복 연결 방지)
 
-        # CSV table headers - size
-        self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
-        self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
-        self.table_csv.verticalHeader().setFixedWidth(48)
+        # CSV table headers - size (줌 인덱스 2 = 100% 기본값 80/20)
+        self.table_csv.horizontalHeader().setDefaultSectionSize(self.ZOOM_COL_WIDTH[self.ZOOM_DEFAULT_INDEX])     # cell width
+        self.table_csv.verticalHeader().setDefaultSectionSize(self.ZOOM_ROW_HEIGHT[self.ZOOM_DEFAULT_INDEX])      # cell height
+        self.table_csv.verticalHeader().setFixedWidth(self.ZOOM_VHEADER_W[self.ZOOM_DEFAULT_INDEX])
         # CSV table headers - alignment
         self.table_csv.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
         self.table_csv.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
@@ -240,6 +261,23 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.button_redo.clicked.connect(self.redo)
         self._update_undo_buttons()        # 초기 상태(모델 없음 → 비활성 + disable 아이콘) 반영
 
+        # ---------- 확대/축소(Ctrl + 마우스 휠) ----------
+        # 100%(인덱스 2)가 현재 모습과 픽셀 동일하도록, 줌 폰트는 '지금의 base 폰트'에서 크기만 바꿔 재구성한다.
+        # (헤더는 교체된 뒤라 여기서 base 폰트를 캡처한다.)
+        self._base_table_font   = self.table_csv.font()
+        self._base_hheader_font = self.table_csv.horizontalHeader().font()
+        self._base_vheader_font = self.table_csv.verticalHeader().font()
+        # 우상단 % 오버레이(잠깐 떴다 사라짐) — 토스트와 유사하나 위치/스타일만 다름
+        self.zoom_label = QLabel(self)
+        self.zoom_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.zoom_label.hide()
+        self._zoom_timer = QTimer(self)
+        self._zoom_timer.setSingleShot(True)
+        self._zoom_timer.timeout.connect(self.zoom_label.hide)
+        # Ctrl+휠 감지: 마우스 휠 이벤트는 테이블 뷰포트로 온다 → 거기에 eventFilter(헤더와 동일 패턴)
+        self.table_csv.viewport().installEventFilter(self)
+
 
     def _apply_highlight(self, color):
         # color: QColor 적용 / None 이면 전체 해제
@@ -286,9 +324,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if entry is None:
             return
         self._flush_size_debounce()      # 보류 중 크기 드래그를 자기 단계로 먼저 확정 → reset 은 깨끗이 1단계
+        self._apply_zoom(self.ZOOM_DEFAULT_INDEX, announce=False)     # 줌도 100%로 — raw 뷰는 배율도 기본
         proxy = entry['table_model']
         source = proxy.sourceModel()
         hdr = self.table_csv.horizontalHeader()
+        default_w = hdr.defaultSectionSize()                         # 줌 리셋 후 기본 너비(=80)
         src_cols = source.columnCount()
         # 이미 raw(분석 0)면 빈 단계 기록 방지 — no-op. 행높이는 dirty 플래그로 싸게 판정.
         has_analysis = (
@@ -297,13 +337,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             or bool(proxy.column_filters)
             or proxy.columnCount() != src_cols                       # Δ 가상열 또는 숨긴 열로 열 수 변동
             or proxy.has_hidden()                                    # 행/열 숨김 존재
-            or any(hdr.sectionSize(c) != 80 for c in range(hdr.count()))
+            or any(hdr.sectionSize(c) != default_w for c in range(hdr.count()))
             or self._rows_dirty                                      # 행높이가 기본(20)에서 바뀜
         )
         if not has_analysis:
             return
         self.table_csv.clearSelection()
-        self._restore_memento(entry, Memento(highlights={}, fd={}, widths=[80] * src_cols, rows=None))
+        self._restore_memento(entry, Memento(highlights={}, fd={}, widths=[default_w] * src_cols, rows=None))
         self.record_history({'highlights', 'fd', 'widths', 'rows'})   # 전 슬라이스 1단계 = 가역
 
     def keyPressEvent(self, event):
@@ -849,9 +889,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         self._wire_selection_signals()      # 새 selectionModel 에 Δ 비교 테두리 핸들러 연결 + 이전 마크 정리
 
-        self.table_csv.horizontalHeader().setDefaultSectionSize(80)     # cell width
-        self.table_csv.verticalHeader().setDefaultSectionSize(20)       # cell height
-        self._rows_dirty = False        # 모델 부착 시 행높이는 기본(20)으로 리셋됨 → dirty 해제(baseline=기본)
+        self._set_zoom_font(self._zoom_index)   # 현재 줌 단계 폰트를 새 모델/헤더에 동기화(Δ 셀 italic 크기 포함)
+
+        # 기본 섹션 크기 = 현재 줌 단계 기준(100%면 80/20). 줌 상태에서 다른 CSV 로 전환해도 동일 배율 유지.
+        self.table_csv.horizontalHeader().setDefaultSectionSize(self.ZOOM_COL_WIDTH[self._zoom_index])     # cell width
+        self.table_csv.verticalHeader().setDefaultSectionSize(self.ZOOM_ROW_HEIGHT[self._zoom_index])      # cell height
+        self._rows_dirty = False        # 모델 부착 시 행높이는 기본으로 리셋됨 → dirty 해제(baseline=기본)
 
         # Set Column Widths (per-CSV) - 저장된 너비가 있으면 복원.
         # ⚠ 가로 스크롤(last_view)보다 먼저 적용해야 너비가 바꾼 스크롤 범위에 값이 클램프되지 않는다.
@@ -1297,6 +1340,14 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # viewport 로 오므로 obj 도 viewport 와 비교한다. singleShot(0) 으로 헤더 자체 release 처리 직후
         # (=최종 크기 확정 후) 실행. _pending_*/_resize_grip 둘 다 없으면 no-op 라 단순 클릭/우클릭엔 무영향.
         et = event.type()
+        # Ctrl + 마우스 휠 = 확대/축소. 휠 이벤트는 테이블 뷰포트로 온다. Ctrl 없으면 평소대로 스크롤(통과).
+        if et == QEvent.Type.Wheel and obj is self.table_csv.viewport():
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                if self.table_csv.model() is not None:
+                    step = 1 if event.angleDelta().y() > 0 else -1
+                    self._apply_zoom(self._zoom_index + step)
+                return True              # 줌으로 소비 → 세로 스크롤로 새지 않게
+            return super().eventFilter(obj, event)
         hv = self.table_csv.horizontalHeader().viewport()
         vv = self.table_csv.verticalHeader().viewport()
         if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
@@ -1375,7 +1426,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self._propagating = False
 
     # ---------- 행/열 숨기기 (드래그-to-음수너비 트리거 + 마커 더블클릭 펼침) ----------
-    MARKER_SIZE_PX = 18        # 마커 섹션(⋯/︙) 고정 두께
+    # ⚠ 마커 두께(MARKER_SIZE_PX)는 클래스 상단의 property 로 정의됨(줌 단계에 연동). 여기서 상수로
+    #   재정의하면 property 를 덮어써 마커가 줌을 안 따라가니 절대 다시 상수로 두지 말 것.
 
     def _do_hide_gesture(self, horizontal, idx, pre_size):
         # 경계를 시작 끝 너머로 끈 결과: 잡은 섹션(+다중 완전선택이면 그 집합 전체)을 숨긴다(연속이면 마커 1개).
@@ -1611,6 +1663,115 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.button_redo.setEnabled(can_redo)
         self.button_undo.setIcon(self._icon_undo if can_undo else self._icon_undo_off)
         self.button_redo.setIcon(self._icon_redo if can_redo else self._icon_redo_off)
+
+    # ---------- 확대/축소 ----------
+    def _apply_zoom(self, new_idx, announce=True):
+        # 줌 단계를 new_idx 로 바꾼다(0~4 클램프). 폰트는 절대값으로, 셀 크기는 직전 단계 대비 비율로 스케일.
+        #  - 열: 개별 resizeSection(델타 가상열 포함) — 사용자 지정 너비도 비율 유지(엑셀식).
+        #  - 행: defaultSectionSize 만 바꿔 기본 행 전체를 O(1) 로 스케일(18만 행 안전). 마커는 줌별 절대 두께.
+        #  - 마커(숨김 열/행 ⋯/︙): 줌별 절대 두께라 함께 확대/축소된다(req7). MARKER_SIZE_PX property 가 자동 연동.
+        # 프로그램적 리사이즈라 _suppress_width_record 로 undo/히스토리에 안 남긴다.
+        new_idx = max(0, min(len(self.ZOOM_PERCENT) - 1, new_idx))
+        old = self._zoom_index
+        if new_idx != old:
+            proxy = self.table_csv.model()
+            hdr = self.table_csv.horizontalHeader()
+            vhdr = self.table_csv.verticalHeader()
+            rc = self.ZOOM_COL_WIDTH[new_idx] / self.ZOOM_COL_WIDTH[old]
+            # ScrollPerPixel 이라 줌으로 콘텐츠 크기(스크롤 범위)가 바뀌면 같은 절대 픽셀값이 다른 위치를 가리켜
+            # 화면이 튄다 → 줌 *전* 스크롤 비율을 잡아 줌 *후* 그 비율로 복원(보던 위치 유지). 확대/축소 대칭.
+            vf = self._scroll_fraction(self.table_csv.verticalScrollBar())
+            hf = self._scroll_fraction(self.table_csv.horizontalScrollBar())
+            self._zoom_index = new_idx
+            self._set_zoom_font(new_idx)
+            has_marker = proxy is not None and hasattr(proxy, "marker_col_positions")
+            marker_cols = set(proxy.marker_col_positions()) if has_marker else set()
+            marker_rows = list(proxy.marker_row_positions()) if has_marker else []
+            self._suppress_width_record = True
+            hdr.setUpdatesEnabled(False)
+            vhdr.setUpdatesEnabled(False)
+            try:
+                # 행: defaultSectionSize 만 바꿔 기본 행 전체를 1회 스케일(O(1), 18만 행 안전).
+                vhdr.setDefaultSectionSize(self.ZOOM_ROW_HEIGHT[new_idx])
+                # 열(마커 제외): 각 열을 '직전 크기 × 비율'로 1회만 스케일. ⚠ 반드시 hdr.setDefaultSectionSize
+                #   보다 *먼저* 돌아야 한다 — 기본값을 먼저 바꾸면 기본 열이 점프한 뒤 루프가 또 곱해 이중 적용된다.
+                for c in range(hdr.count()):
+                    if c not in marker_cols:
+                        hdr.resizeSection(c, max(10, round(hdr.sectionSize(c) * rc)))
+                # 위 루프로 일반 열은 모두 명시 크기 → 이후 기본값 변경은 '앞으로 생길 열(Δ 추가 등)'에만 영향.
+                hdr.setDefaultSectionSize(self.ZOOM_COL_WIDTH[new_idx])
+                # 마커는 기본값 변경 *뒤* 절대 두께로 고정(앞서 두면 setDefaultSectionSize 가 기본값으로 덮어씀).
+                for c in marker_cols:
+                    if 0 <= c < hdr.count():
+                        hdr.resizeSection(c, self.MARKER_SIZE_PX)            # 마커 열 = 줌별 절대 두께
+                for pr in marker_rows:
+                    if 0 <= pr < vhdr.count():
+                        vhdr.resizeSection(pr, self.MARKER_SIZE_PX)          # 마커 행 = 줌별 절대 두께
+                self._fix_marker_sections(hdr, marker_cols)                  # 마커 섹션 Fixed 재고정
+                self._fix_marker_sections(vhdr, marker_rows)
+            finally:
+                hdr.setUpdatesEnabled(True)
+                vhdr.setUpdatesEnabled(True)
+                self._suppress_width_record = False
+            self.table_csv.viewport().update()
+            # 비율 복원. 새 스크롤 범위가 즉시 갱신 안 됐을 수 있어 즉시 + 레이아웃 정착 후(singleShot) 한 번 더.
+            self._apply_scroll_fraction(self.table_csv.verticalScrollBar(), vf)
+            self._apply_scroll_fraction(self.table_csv.horizontalScrollBar(), hf)
+            QTimer.singleShot(0, lambda: (
+                self._apply_scroll_fraction(self.table_csv.verticalScrollBar(), vf),
+                self._apply_scroll_fraction(self.table_csv.horizontalScrollBar(), hf)))
+        if announce:
+            self._show_zoom_overlay(new_idx)
+
+    @staticmethod
+    def _scroll_fraction(bar):
+        # 스크롤바의 현재 위치 비율(0.0~1.0). 범위가 0이면(스크롤 불필요) 0.
+        rng = bar.maximum() - bar.minimum()
+        return (bar.value() - bar.minimum()) / rng if rng > 0 else 0.0
+
+    @staticmethod
+    def _apply_scroll_fraction(bar, frac):
+        rng = bar.maximum() - bar.minimum()
+        if rng > 0:
+            bar.setValue(round(bar.minimum() + frac * rng))
+
+    def _set_zoom_font(self, idx):
+        # 줌 단계 폰트 적용. 인덱스 2(100%)는 base 폰트 그대로(=현재 모습과 픽셀 동일), 그 외는 크기만 교체.
+        # Δ 셀 italic 폰트(proxy._italic_font)도 같은 크기로 동기화해 델타 글자도 함께 확대/축소된다.
+        if idx == self.ZOOM_DEFAULT_INDEX:
+            self.table_csv.setFont(self._base_table_font)
+            self.table_csv.horizontalHeader().setFont(self._base_hheader_font)
+            self.table_csv.verticalHeader().setFont(self._base_vheader_font)
+            pt = None                                                       # 100% = 셀 FontRole 미지정(뷰 기본 폰트 그대로)
+        else:
+            pt = self.ZOOM_FONT_PT[idx]
+            for widget, base in ((self.table_csv, self._base_table_font),
+                                 (self.table_csv.horizontalHeader(), self._base_hheader_font),
+                                 (self.table_csv.verticalHeader(), self._base_vheader_font)):
+                f = QFont(base)
+                f.setPointSize(pt)
+                widget.setFont(f)
+        # 좌측 행번호 칸 폭도 줌에 맞춰 — 큰 글자/행번호가 잘리지 않게(폰트와 함께 다루면 update_table·줌 모두 커버).
+        self.table_csv.verticalHeader().setFixedWidth(self.ZOOM_VHEADER_W[idx])
+        proxy = self.table_csv.model()
+        if proxy is not None and hasattr(proxy, "set_cell_font_point_size"):
+            proxy.set_cell_font_point_size(pt)
+
+    def _show_zoom_overlay(self, idx):
+        # 우상단에 현재 배율(예: 150%)을 잠깐 띄웠다 _zoom_timer 로 자동 숨김.
+        self.zoom_label.setStyleSheet(
+            "QLabel { color: white; background-color: rgba(40, 44, 52, 180);"
+            " border-radius: 6px; padding: 6px 14px; font-size: 20px; font-weight: 700; }")
+        self.zoom_label.setText(f"{self.ZOOM_PERCENT[idx]}%")
+        self.zoom_label.adjustSize()
+        tr = self.table_csv.mapTo(self, self.table_csv.rect().topRight())
+        margin = 15
+        x = tr.x() - self.zoom_label.width() - margin
+        y = tr.y() + margin - 10
+        self.zoom_label.move(max(0, x), max(0, y))
+        self.zoom_label.raise_()
+        self.zoom_label.show()
+        self._zoom_timer.start(800)
 
     def _show_toast(self, text, ms=1400, success=True):
         # 짧은 알림(table_csv 오른쪽 위 구석, 네모 박스). 성공=초록 / 실패=빨강. ms 후 자동 숨김.

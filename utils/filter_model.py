@@ -48,6 +48,7 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._src_to_pcol = []            # source_col -> 그 'src' 프록시 열
         self._italic_font = QFont()       # Δ 열 셀은 italic 으로 표시 (FontRole)
         self._italic_font.setItalic(True)
+        self._cell_font = None            # 줌≠100% 일 때 일반 셀 FontRole 로 줄 폰트(None=뷰 기본 폰트 사용)
         self._delta_color = {}            # {base_col: {source_row: QColor}} - Δ 셀 사용자 색칠(소스 셀이 없어 별도 저장)
         self._delta_prev = {}             # {base_col: {source_row: prev_source_row|None}} - 짝(스냅샷 시점 이전 보이는 행)
         self._delta_snap_filter = {}      # {base_col: {src_col: frozenset}} - 스냅샷 당시 활성 '열 값 필터'(Option2 영속화: 멤버십의 '원인'만 저장)
@@ -70,6 +71,23 @@ class CSVFilterProxyModel(QAbstractProxyModel):
         self._HMARK_ROW = "︙"        # ︙ 행 마커 글리프 (안 보이면 이 상수만 교체)
         self._HMARK_COL = "⋯"        # ⋯ 열 마커 글리프
         self._hidemark_bg = QBrush(QColor(228, 228, 228))   # 마커 셀 본문 회색 배경
+
+    # ---------- 확대/축소: 셀 폰트 크기 동기화 ----------
+    def set_cell_font_point_size(self, pt):
+        # 줌 단계 폰트 크기(pt)에 맞춰 일반 셀 폰트 + Δ italic 폰트를 다시 만든다.
+        # ⚠ 테이블에 스타일시트(background:white)가 걸려 있어 table_csv.setFont() 가 *셀 텍스트*에는
+        #   반영되지 않는다(Qt 함정). 그래서 일반 셀도 모델 FontRole 로 폰트를 직접 줘야 글자가 확대/축소된다.
+        # pt 가 None/0/음수면(=100% 기본) self._cell_font=None → 뷰 기본 폰트 그대로(네이티브 모습 유지).
+        italic = QFont()
+        italic.setItalic(True)
+        if pt and pt > 0:
+            italic.setPointSize(pt)
+            cell = QFont()
+            cell.setPointSize(pt)
+            self._cell_font = cell
+        else:
+            self._cell_font = None
+        self._italic_font = italic
 
     # ---------- 소스 모델 연결 ----------
     def setSourceModel(self, model):
@@ -340,6 +358,9 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             if role != Qt.ItemDataRole.DisplayRole:
                 return None
             return self._delta_snap.get(base, {}).get(sr, "")
+        # 일반 셀: 줌≠100% 면 FontRole 로 확대/축소된 폰트를 직접 준다(스타일시트로 setFont 가 안 먹는 함정 회피).
+        if role == Qt.ItemDataRole.FontRole and self._cell_font is not None:
+            return self._cell_font
         return self._src.data(self.mapToSource(index), role)
 
     def flags(self, index):
