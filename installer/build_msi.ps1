@@ -15,6 +15,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# 버전 → 안정적(deterministic) GUID. 같은 버전이면 항상 같은 GUID, 버전이 다르면 다른 GUID.
+# ProductCode 를 이 방식으로 만들어, '같은 버전=같은 ProductCode(재실행=제거 토글)',
+# '다른 버전=다른 ProductCode(MajorUpgrade 로 업그레이드)' 를 동시에 만족시킨다.
+# (Windows Installer 는 GUID 의 RFC 버전 비트를 안 따지므로 SHA1 해시→GUID 로 충분.)
+function New-DeterministicGuid {
+    param([string]$Namespace, [string]$Name)
+    $sha1  = [System.Security.Cryptography.SHA1]::Create()
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes("$Namespace|$Name")
+    $hash  = $sha1.ComputeHash($bytes)
+    $g = New-Object byte[] 16
+    [Array]::Copy($hash, $g, 16)
+    $g[6] = ($g[6] -band 0x0F) -bor 0x50   # version nibble = 5 (name-based)
+    $g[8] = ($g[8] -band 0x3F) -bor 0x80   # variant bits
+    return (New-Object System.Guid(,$g)).ToString().ToUpper()
+}
+
 $Root    = Split-Path $PSScriptRoot -Parent          # 프로젝트 루트
 $Dist    = Join-Path $Root   'dist\CSV Viewer'       # PyInstaller onedir 산출물
 $ResRoot = Join-Path $Root   'GUI\res'
@@ -54,10 +70,24 @@ if ($wixCmd) {
 }
 if (-not (Test-Path $wixExe)) { throw "wix 실행파일을 찾을 수 없습니다: $wixExe" }
 
-# 3) MSI 빌드
+# 3) wxs 에서 Version·UpgradeCode 를 읽어 ProductCode 를 버전별로 산출
+#    (버전은 CSVViewer.wxs 의 Version="..." 한 곳이 유일한 출처. 여기서 그 값을 읽어 파생만 함.)
+$wxsText = Get-Content -Raw -LiteralPath $Wxs
+# 대소문자 구분(-cmatch): XML 선언의 소문자 version="1.0" 가 아니라 Package 의 Version="1.0.0.0" 을 잡는다.
+if ($wxsText -cnotmatch 'Version="(\d+(?:\.\d+){1,3})"') { throw "CSVViewer.wxs 에서 Version 을 찾지 못했습니다." }
+$Version = $Matches[1]
+if ($wxsText -cnotmatch 'UpgradeCode="([0-9A-Fa-f-]{36})"') { throw "CSVViewer.wxs 에서 UpgradeCode 를 찾지 못했습니다." }
+$UpgradeCode = $Matches[1]
+# Windows Installer 의 버전 비교는 앞 3자리(major.minor.build)만 본다(4번째는 무시).
+# → 같은 '3자리 버전'은 같은 ProductCode 가 되도록 3자리로 GUID 를 만든다(토글 정합).
+$ver3 = ($Version -split '\.')[0..2] -join '.'
+$ProductCode = '{' + (New-DeterministicGuid $UpgradeCode $ver3) + '}'
+
+# 4) MSI 빌드
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Write-Host "==> WiX 빌드  ($wixExe)" -ForegroundColor Cyan
-& $wixExe build $Wxs -arch x64 -d "DistDir=$Dist" -d "ResRoot=$ResRoot" -o $Msi
+Write-Host "    Version=$Version  ProductCode=$ProductCode" -ForegroundColor DarkGray
+& $wixExe build $Wxs -arch x64 -d "DistDir=$Dist" -d "ResRoot=$ResRoot" -d "ProductCode=$ProductCode" -o $Msi
 if ($LASTEXITCODE -ne 0) { throw 'WiX 빌드 실패' }
 
 $size = [math]::Round((Get-Item $Msi).Length / 1MB, 1)

@@ -16,18 +16,26 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
       Name="CSV Viewer"
-      Manufacturer="yslee"
-      Version="1.0.0.0"
-      ProductCode="{5C69FF31-237D-497D-B120-1A80F32267EF}"
+      Manufacturer="ChickenSlayer"
+      Version="1.0.4.0"
+      ProductCode="$(var.ProductCode)"
       UpgradeCode="BB893716-5CA4-4B5F-8C68-437174BD6795"
       Scope="perMachine"
       Compressed="yes">
 
-    <!-- ★ ProductCode 고정(위 Package/@ProductCode): 매 빌드마다 ProductCode가 새로 생기면
-         "재실행=제거" 토글이 깨진다(다시 빌드한 MSI를 Windows가 '다른 제품'으로 봐서 자기 설치를
-         인식 못 함). 고정하면 어떤 빌드든 같은 제품 → 토글/제거가 일관되게 동작.
-         AllowSameVersionUpgrades=yes: 옛 빌드(다른 ProductCode)가 깔려 있어도 설치 시 자동 제거.
-         단, 고정 ProductCode라 '버전 올려 제자리 업그레이드'는 불가(토글로 제거→설치). -->
+    <!-- ★ ProductCode = '버전별로 결정되는 GUID'(build_msi.ps1 이 Version 으로부터 산출해 주입).
+         같은 버전 → 같은 ProductCode, 다른 버전 → 다른 ProductCode. 이 한 가지로 세 동작이 모두 성립:
+           · 미설치          → 신규 설치
+           · 옛 버전 설치됨   → ProductCode 가 달라 Installed=거짓 → MajorUpgrade(UpgradeCode)가
+                                구버전을 감지·제거하고 새 버전 설치 = 업그레이드  (WIX_UPGRADE_DETECTED)
+           · 같은 버전 설치됨 → ProductCode 가 같아 Installed=참 → 아래 SetProperty 로 제거 토글
+           · 더 최신 설치됨   → 다운그레이드 차단(DowngradeErrorMessage, WIX_DOWNGRADE_DETECTED)
+         ※ 과거엔 ProductCode 를 한 GUID 로 고정해, 다른 버전 MSI 를 실행해도 같은 제품으로 인식 →
+            업그레이드가 안 되고 제거 토글만 떴다. 그 버그를 '버전별 ProductCode'로 해결한 것.
+         ※ FindRelatedProducts 는 '자기 ProductCode' 는 제외하므로, 같은 버전 MSI 를 재실행해도
+            업그레이드로 오인하지 않고 정확히 제거 토글이 된다.
+         ※ AllowSameVersionUpgrades=yes: 옛 고정-ProductCode 빌드(같은 1.0.0.0, 다른 ProductCode)가
+            깔려 있어도 새 빌드를 업그레이드로 깔끔히 교체(1회성 마이그레이션). UpgradeCode 는 불변. -->
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   DowngradeErrorMessage="이미 더 최신 버전의 [ProductName] 이(가) 설치되어 있습니다." />
 
@@ -114,9 +122,12 @@
          MsgBox 는 대화형 데스크톱 필요 → immediate(사용자 컨텍스트). /qn 무인설치는 UI 시퀀스를
          아예 타지 않아 확인창이 안 뜨고 그대로 진행된다(완료 팝업과 동일). -->
     <Binary Id="ConfirmInstallScript"   SourceFile="$(sys.SOURCEFILEDIR)confirm_install.vbs" />
+    <Binary Id="ConfirmUpgradeScript"   SourceFile="$(sys.SOURCEFILEDIR)confirm_upgrade.vbs" />
     <Binary Id="ConfirmUninstallScript" SourceFile="$(sys.SOURCEFILEDIR)confirm_uninstall.vbs" />
     <CustomAction Id="ConfirmInstall" BinaryRef="ConfirmInstallScript"
                   VBScriptCall="ConfirmInstall" Execute="immediate" Return="check" />
+    <CustomAction Id="ConfirmUpgrade" BinaryRef="ConfirmUpgradeScript"
+                  VBScriptCall="ConfirmUpgrade" Execute="immediate" Return="check" />
     <CustomAction Id="ConfirmUninstall" BinaryRef="ConfirmUninstallScript"
                   VBScriptCall="ConfirmUninstall" Execute="immediate" Return="check" />
 
@@ -131,11 +142,18 @@
                   Execute="immediate" Return="ignore" />
 
     <InstallUISequence>
-      <!-- 작업 '시작 전' 확인(ExecuteAction 전). REMOVE 는 위 SetProperty(Before CostFinalize)로
-           이미 세팅돼 있어 설치/제거를 정확히 구분한다. No → user-exit 로 작업 중단. -->
-      <Custom Action="ConfirmInstall"   Before="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
+      <!-- 작업 '시작 전' 확인(ExecuteAction 전). 세 상태를 조건으로 구분하며 정확히 하나만 뜬다:
+             · 신규 설치 = 설치 안 됨 + 업/다운그레이드 대상 아님          → ConfirmInstall   ("install?")
+             · 업그레이드 = 옛 버전 감지(WIX_UPGRADE_DETECTED)             → ConfirmUpgrade   ("update?")
+             · 제거 토글  = 같은 버전이라 Installed → REMOVE=ALL           → ConfirmUninstall ("uninstall?")
+           REMOVE/WIX_*_DETECTED 는 ExecuteAction 전(SetProperty·FindRelatedProducts)에 이미 세팅됨.
+           No → user-exit 로 작업 중단. (더 최신 버전 설치 시엔 MajorUpgrade 가 먼저 다운그레이드 차단) -->
+      <Custom Action="ConfirmInstall"   Before="ExecuteAction"
+              Condition="NOT Installed AND NOT REMOVE AND NOT WIX_UPGRADE_DETECTED AND NOT WIX_DOWNGRADE_DETECTED" />
+      <Custom Action="ConfirmUpgrade"   Before="ExecuteAction"
+              Condition="WIX_UPGRADE_DETECTED AND NOT REMOVE" />
       <Custom Action="ConfirmUninstall" Before="ExecuteAction" Condition="REMOVE=&quot;ALL&quot;" />
-      <!-- 신규 설치 완료(제거가 아닐 때) -->
+      <!-- 설치/업그레이드 완료(제거가 아닐 때. 업그레이드는 Installed=거짓이라 함께 잡힌다) -->
       <Custom Action="ShowInstallDone" After="ExecuteAction" Condition="NOT Installed AND NOT REMOVE" />
       <!-- 제거 완료(토글 재실행 제거 또는 /x 제거) -->
       <Custom Action="ShowUninstallDone" After="ExecuteAction" Condition="REMOVE=&quot;ALL&quot;" />
