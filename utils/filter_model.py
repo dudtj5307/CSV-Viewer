@@ -508,6 +508,61 @@ class CSVFilterProxyModel(QAbstractProxyModel):
             return f"Δ [{base}]"
         return base
 
+    def graph_dataset(self):
+        """3D 그래프용 (headers, rows). **값 필터(열·Δ)는 적용**하되 **행/열 '숨기기'는 무시**한다.
+        - 열 = 모든 소스 열(숨긴 열 포함) + 각 Δ 열(테이블과 동일 배치, 마커 열 제외)
+        - 행 = 값 필터(column_filters + delta_filters)를 통과한 소스 행(숨김 무시 → 숨긴 행도 포함)
+        - Δ 값 = 스냅샷. 단 **첫 행 안내문구(r(n)-r(n-1))는 빈값으로 예외처리**(숫자 판정에서 무시)
+          → 나머지가 모두 숫자면 Δ 열도 x/y/z 축 선택 가능. 문자비교 =/≠ 등 다른 비숫자 값은 그대로
+          둬, 그런 값이 섞인 Δ 열은 일반 열과 동일하게 자동으로 숫자 축 후보에서 빠진다.
+        숨김 좌표(col_map)를 거치지 않고 소스에서 직접 구성하므로 숨김과 무관하다."""
+        if self._src is None:
+            return [], []
+        src_rows = self._src.rows
+        headers_src = self._src.headers
+        ncols = len(headers_src)
+
+        # 값 필터(열 + Δ) 통과 행 — 숨김은 무시. _rebuild 의 passes() 와 동일 판정(숨김 분기만 제거).
+        src_active = list(self.column_filters.items())
+        delta_active = [(self._delta_snap.get(b, {}), h) for b, h in self.delta_filters.items()]
+        if not src_active and not delta_active:
+            rows_idx = range(len(src_rows))
+        else:
+            def passes(i, row):
+                for col, h in src_active:
+                    if row[col] in h:
+                        return False
+                for snap, h in delta_active:
+                    if snap.get(i, "") in h:
+                        return False
+                return True
+            rows_idx = [i for i, row in enumerate(src_rows) if passes(i, row)]
+
+        # 열 구성: 각 소스 열 + (있으면) 그 Δ 열
+        headers = []
+        specs = []        # ('src', col) | ('delta', base_col)
+        for c in range(ncols):
+            headers.append(str(headers_src[c]))
+            specs.append(('src', c))
+            if c in self._delta_base:
+                headers.append(f"Δ [{headers_src[c]}]")
+                specs.append(('delta', c))
+
+        out = []
+        for i in rows_idx:
+            srow = src_rows[i]
+            line = []
+            for kind, c in specs:
+                if kind == 'src':
+                    line.append(srow[c] if c < len(srow) else "")
+                else:
+                    v = self._delta_snap.get(c, {}).get(i, "")
+                    # Δ 첫 행 안내문구(r(n)-r(n-1))는 예외 — 빈값으로 둬 숫자 판정에서 무시
+                    # (나머지가 숫자면 Δ 축 선택 가능). =/≠ 등 다른 비숫자는 그대로 → 축 불가 유지.
+                    line.append("" if v == self._FIRST_LABEL else v)
+            out.append(line)
+        return headers, out
+
     # ---------- 행/열 숨기기 ----------
     # 숨김 좌표는 소스 인덱스 기준(정렬·필터와 무관하게 안정). 구조 변경이라 beginResetModel 로 알린다
     # (행/열 다수 → 마커 1개로 접히는 비단순 변경이라 insert/remove 보다 reset 이 단순·안전. 뷰는 보이는 셀만 다시 그림).

@@ -1,28 +1,23 @@
 # CSV Viewer — Claude 참조 문서
 
 ## 한 줄 요약
-CSV 폴더를 열람하는 **PyQt6 데스크톱 뷰어**. 외부 응용 SW가 `CSV Viewer.exe [CSV폴더경로]` 를 실행하면 **독립 프로세스로 뷰어 창 하나**가 뜬다. 여러 번 실행하면 서로 독립적인 창이 여러 개 뜬다. onedir 빌드라 압축해제가 없어 매 실행 콜드스타트가 가볍다 → **백엔드/IPC가 없는 단순 구조**.
-
-> 이 프로젝트는 기존 Packet_Parsing_Software(PPS)에서 **CSV Viewer 부분만 분리**한 것이다. 패킷 캡처/파싱/CSV 생성(scapy·IDL·parser·creator) 기능은 모두 제거됐다.
+CSV 폴더를 열람하는 **PyQt6 데스크톱 뷰어**. 외부 SW가 `CSV Viewer.exe [CSV폴더경로]`를 실행하면 **독립 프로세스로 뷰어 창 하나**가 뜬다. onedir 빌드라 콜드스타트가 가볍고 **백엔드/IPC가 없는 단순 구조**다. (기존 Packet_Parsing_Software에서 CSV Viewer 부분만 분리 — 패킷 캡처/파싱 기능은 모두 제거됨.)
 
 ---
 
 ## 개발 환경 / 실행
 
-conda 환경 **`sniff_env`** 에서 실행/테스트한다. (PyQt6 설치됨. scapy는 더 이상 불필요)
+conda 환경 **`sniff_env`** 에서만 실행/테스트한다 (PyQt6·pyqtgraph·numpy 설치됨).
 
 - 인터프리터: `C:\Users\yslee\anaconda3\envs\sniff_env\python.exe`
-- `python` (PATH) → Windows Store 스텁이라 실행 안 됨 (exit 49)
-- `py` 런처 · anaconda base · Python310 → **PyQt6 없음**. 오직 `sniff_env`에만 설치됨
-- GUI 없이 로직 스모크 테스트 시 → `QT_QPA_PLATFORM=offscreen` 설정 후 실행
+- `python`(PATH)=Store 스텁(exit 49), `py`·anaconda base·Python310 → **PyQt6 없음**. 오직 `sniff_env`에만.
+- GUI 없이 로직 테스트 시 `QT_QPA_PLATFORM=offscreen` 설정 후 실행.
+- ⚠ **offscreen은 폰트 굵기(bold/italic)·GL 렌더를 못 그린다** → 헤더 폰트 스타일·3D 그래프·연필 마커·델리게이트 테두리 등은 **실Windows 육안이 최종 검증**. (좌표/geometry 계산은 offscreen으로 확정 가능.)
 
 ```powershell
-# 앱 실행 (인자 없으면 폴더 선택창, 폴더 경로를 주면 그 폴더를 바로 연다)
-& "C:\Users\yslee\anaconda3\envs\sniff_env\python.exe" csv_viewer.py
+& "C:\Users\yslee\anaconda3\envs\sniff_env\python.exe" csv_viewer.py            # 인자 없으면 폴더 선택창
 & "C:\Users\yslee\anaconda3\envs\sniff_env\python.exe" csv_viewer.py "CSV\raw_250416_174444"
-
-# offscreen 로직 테스트
-$env:QT_QPA_PLATFORM="offscreen"; & "C:\Users\yslee\anaconda3\envs\sniff_env\python.exe" <script>.py
+$env:QT_QPA_PLATFORM="offscreen"; & "...\python.exe" <script>.py                # offscreen 로직 테스트
 ```
 
 ---
@@ -31,48 +26,47 @@ $env:QT_QPA_PLATFORM="offscreen"; & "C:\Users\yslee\anaconda3\envs\sniff_env\pyt
 
 ```
 Project_CSV_Viewer/
-├── csv_viewer.py              # 진입점. 폴더 해석 → ViewerWindow 하나 표시 → app.exec()
+├── csv_viewer.py              # 진입점. 폴더 해석 → ViewerWindow 1개 → app.exec()
 ├── CSV_Viewer.spec            # PyInstaller 빌드 (onedir, windowed)
 ├── GUI/
 │   ├── gui_viewer.py          # ViewerWindow - CSV 목록 + 테이블 뷰어 (메인 화면)
-│   ├── gui_header.py          # FilterHeaderView - 가로 헤더(우클릭→필터 팝업, 열 마커 ⋯ 페인트) + MarkerVHeaderView - 세로 헤더(행 마커 ︙ 페인트)
-│   ├── gui_filter.py          # FilterWidget - 우클릭 필터 팝업창(체크박스 필터 UI)
-│   ├── res/                   # 아이콘/스피너 리소스 (png · ico · gif)
-│   └── ui/                    # pyuic6 자동생성 UI 파일 (직접 수정 금지)
-│       ├── dialog_viewer.py   # Ui_ViewerWindow
-│       ├── dialog_filter.py   # Ui_FilterForm
-│       └── widget_esc.py      # Ui_WidgetESC (ESC 안내 위젯)
-├── utils/                     # ⚠ viewer/ 하위가 아니라 utils/ 바로 아래에 있음
-│   ├── table_model.py         # CSVTableModel (QAbstractTableModel)
-│   ├── filter_model.py        # CSVFilterProxyModel (열 필터 프록시 + Δ 가상 열)
-│   ├── search_model.py        # SearchModel (Ctrl+F 검색 로직)
-│   ├── csv_loader.py          # CSVLoaderThread (비동기 CSV 로딩)
-│   └── view_state.py          # .viewer 영속화 (분석 결과 저장/로드, QColor↔문자열, 원자적 파일 IO)
-└── CSV/                       # 열람 대상 CSV 폴더들 (샘플/테스트 데이터)
+│   ├── gui_header.py          # FilterHeaderView(가로 헤더: 우클릭 필터·열 마커⋯) + MarkerVHeaderView(세로 헤더: 행 마커︙)
+│   ├── gui_filter.py          # FilterWidget - 우클릭 필터 팝업. _FilterItemRow/_filter_sort_key 는 그래프 트랙 목록도 재사용
+│   ├── gui_graph.py           # GraphWindow - 3D 궤적 그래프 창(pyqtgraph GLViewWidget). open_graph 에서 지연 import
+│   ├── gui_listmark.py        # EditMarkDelegate - CSV 목록 편집/저장 상태 연필 마커
+│   ├── gui_delegate.py        # CompareBorderDelegate - Δ 비교/검색 셀 테두리
+│   ├── res/                   # 아이콘/스피너 리소스 (png·ico·gif)
+│   └── ui/                    # pyuic6 자동생성 UI (직접 수정 금지): dialog_viewer·dialog_filter·widget_esc·widget_graph
+├── utils/                     # ⚠ viewer/ 가 아니라 utils/ 바로 아래
+│   ├── table_model.py         # CSVTableModel (QAbstractTableModel): rows + highlight_cells
+│   ├── filter_model.py        # CSVFilterProxyModel: 열 필터 + Δ 가상 열 + 행/열 숨기기
+│   ├── search_model.py        # SearchModel (Ctrl+F)
+│   ├── csv_loader.py          # CSVLoaderThread (비동기 로딩)
+│   ├── edit_history.py        # EditHistory/Memento (Undo/Redo)
+│   └── view_state.py          # .viewer 영속화 (저장/로드, QColor↔문자열, 원자적 IO)
+└── CSV/                       # 열람 대상 샘플 CSV 폴더들
 ```
 
-> **정리 잔여물(미사용)**: `IDL/`, `RAW/`, `test code/`, `settings.conf`, `build/`, `dist/` 와 `GUI/ui/`의 생성 스크립트는 PPS 시절 데이터/도구다. 런타임과 무관하므로 보존했으며 수동 삭제 가능하다.
+> **미사용 잔여물(PPS 시절)**: `IDL/`, `RAW/`, `test code/`, `settings.conf`, `build/`, `dist/`, `GUI/ui/`의 생성 스크립트. 런타임 무관, 수동 삭제 가능.
 
 ---
 
 ## 아키텍처: 실행마다 독립 프로세스 + 창 하나
 
-`CSV Viewer.exe` 실행 1회 = 독립 프로세스 1개 = `ViewerWindow` 1개. 단일 인스턴스/IPC/상주 백엔드가 **없다**.
+`CSV Viewer.exe` 실행 1회 = 독립 프로세스 1개 = `ViewerWindow` 1개. 단일 인스턴스/IPC/상주 백엔드 **없음**.
 
 ```
 csv_viewer.py main()
-  ├─ setup_std_streams()        : windowed에서 stdout/stderr=None 가드
+  ├─ setup_std_streams()   : windowed에서 stdout/stderr=None 가드
   ├─ QApplication 생성
-  ├─ argv[1] 검사             : 유효 폴더면 folder, 없거나 무효면 None
-  ├─ ViewerWindow(icon_path, folder|None).show()  : 폴더 None이면 빈 창으로 시작
-  └─ (folder 없을 때) QTimer.singleShot(0, viewer.open_csv_folder)  : 빈 창 위에 폴더 선택창 → app.exec()
-       └─ 선택 시 _load_folder / 취소 시 빈 화면 유지
+  ├─ argv[1] 검사          : 유효 폴더면 folder, 아니면 None
+  ├─ ViewerWindow(icon_path, folder|None).show()
+  └─ (folder 없을 때) QTimer.singleShot(0, viewer.open_csv_folder)  → app.exec()
 ```
 
-- **독립성**: 각 창이 완전히 별개 프로세스 → 서로 영향 없음(하나 닫아도 나머지 유지). 여러 번 실행하면 누른 횟수만큼 창이 뜬다.
-- **속도**: onedir라 매 실행 압축해제가 없어 기동이 빠름. **onefile은 매 실행마다 temp 압축해제 → 느려지므로 쓰지 말 것** (이 단순 구조의 전제).
-- **트레이드오프**: 창 N개 = 프로세스 N개(메모리도 N배). "한 번에 전부 닫기" 같은 공통 제어점은 없다. (필요해지면 단일 인스턴스 백엔드 + QLocalServer 구조로 되돌릴 수 있음 — git 히스토리 참고)
-- **windowed(`console=False`) 주의**: frozen 상태에서 `sys.stdout/stderr`가 `None`이라 코드 곳곳의 `print()`(예: csv_loader)가 크래시한다 → `setup_std_streams()`가 None이면 `devnull`로 대체한다. **이 가드 없이 print 추가 금지.**
+- **독립성**: 창 N개 = 프로세스 N개(메모리 N배). "한 번에 전부 닫기" 같은 공통 제어점 없음.
+- **onefile 금지**: onedir라 압축해제 없어 기동 빠름. onefile은 매 실행 temp 압축해제로 느려짐 (이 단순 구조의 전제).
+- ⚠ **windowed(`console=False`) 가드**: frozen 상태에서 `sys.stdout/stderr`가 `None`이라 `print()`가 크래시한다 → `setup_std_streams()`가 None이면 `devnull`로 대체. **이 가드 없이 print 추가 금지.**
 
 ---
 
@@ -80,225 +74,234 @@ csv_viewer.py main()
 
 | 클래스 / 함수 | 파일 | 역할 |
 |--------|------|------|
-| `main()` | csv_viewer.py | 진입점. 인자 폴더면 바로 열고, 없으면 빈 창 + 폴더 선택창(취소 시 빈 화면 유지) |
-| `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자 = `(icon_path, csv_folder=None)`** (None=빈 상태) |
-| `FilterHeaderView` | gui_header.py | 커스텀 수평 헤더. 우클릭 → 열 필터 팝업 (`FilterWidget` 사용). 열 마커(⋯) 페인트 |
-| `MarkerVHeaderView` | gui_header.py | 커스텀 수직 헤더. 행 마커(︙) 페인트 전용(가로 헤더와 대칭). 숨김 트리거/펼침은 `ViewerWindow`가 처리 |
+| `main()` | csv_viewer.py | 진입점. 인자 폴더면 즉시 열고, 없으면 빈 창 + 폴더 선택창(취소=빈 화면) |
+| `ViewerWindow` | gui_viewer.py | CSV 목록 + 테이블 뷰어. cache 기반 다중 CSV 관리. **생성자=`(icon_path, csv_folder=None)`** (None=빈 상태) |
+| `FilterHeaderView` | gui_header.py | 수평 헤더. 우클릭→열 필터 팝업, 열 마커(⋯) 페인트 |
+| `MarkerVHeaderView` | gui_header.py | 수직 헤더. 행 마커(︙) 페인트. 숨김 트리거/펼침은 `ViewerWindow`가 처리 |
 | `FilterWidget` | gui_filter.py | 체크박스 기반 필터 팝업창 |
+| `GraphWindow` | gui_graph.py | 3D 궤적 그래프 창. **생성자=`(icon_path=None, parent=None)`** + `set_data(headers, rows, title)` |
 | `CSVTableModel` | utils/table_model.py | QAbstractTableModel. rows + highlight_cells |
-| `CSVFilterProxyModel` | utils/filter_model.py | 열별 필터 프록시 + Δ 가상 열 + **행/열 숨기기**. column_filters(소스 열 키), 헤더 `⧩` 표시, 열 간접화(col_map), hidden_rows/cols(소스 좌표)+마커 섹션(⋯/︙) (아래 ⚠) |
-| `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. **선택 영역 검색**(아래 ⚠) 지원 |
-| `CSVLoaderThread` | utils/csv_loader.py | 비동기 CSV 읽기 (utf-8-sig → cp949 폴백). 읽은 데이터는 `pyqtSignal(str, object)`로 전달 (아래 ⚠). 캐시 무효화용 지문(`signature`=stat, `content_hash`=sha256)도 스레드에서 계산해 `t.signature/t.content_hash`로 노출 |
-| `view_state` (모듈) | utils/view_state.py | 분석 결과 영속화. `<CSV폴더>\.viewer`(폴더당 1 JSON)에 사용자 입력만 저장/로드. 원자적 쓰기(temp→os.replace)·머지, QColor↔'#rrggbb', envelope/version 게이트 (아래 ⚠ 변경 이력) |
-| `EditHistory` | utils/edit_history.py | Undo/Redo(Ctrl+Z/Ctrl+Y) 스택. **CSV별 1개**(cache['history']), 상한 20단계. `Memento`(highlights/fd/widths/**rows** 4슬라이스 — 앞 3은 .viewer 직렬화 재사용, rows=행높이는 이제 열과 동일하게 .viewer 도 저장)를 push/undo/redo. 순수 저장소 — export·COW 판단은 `ViewerWindow.record_history`/`_make_memento` (아래 ⚠ 변경 이력) |
-
-> **⚠ 선택 영역 검색(scoped search)**: Ctrl+F 검색은 **검색바를 열 때의 선택 상태**로 범위가 정해진다(`SearchModel.capture_scope`, `gui_viewer.search_gui_init`에서 호출). **열/행 '전체 선택'만** 범위로 인정하고, 셀 클릭·셀범위 드래그는 **전체검색**이 된다. 범위는 검색바가 닫힐 때까지 유지(sticky)되며 닫으면 `reset_scope`로 해제된다(검색어를 바꿔 재검색해도 범위 유지). 규칙: **헤더(행 -1)는 전체검색일 때만 포함**(범위검색 시 제외) · 열+행 동시 선택은 **합집합**(선택 열 OR 선택 행). placeholder는 범위검색이면 `"Search selected area"`, 전체면 `"Find Text (Enter)"`. ⚠ 범위는 *열 때* 캡처되므로 **열/행을 먼저 선택한 뒤 Ctrl+F** 해야 한다(검색바를 먼저 연 뒤 선택하면 범위 안 잡힘 → 다시 열어야 함).
->
-> **⚠ 함정 — `selectedColumns()`/`selectedRows()`는 대용량에서 수 초 걸린다**: `capture_scope`는 의도적으로 `QItemSelectionModel.selectedColumns()/selectedRows()`를 **쓰지 않는다**. 열 전체 선택(18만 행을 덮는 범위)에서 이 두 API는 내부적으로 전 행을 순회한다 — 측정값으로 `selectedColumns()`≈0.8s, `selectedRows()`≈1~2.8s라 **Ctrl+F가 2~3초 얼어붙었다**. 대신 `selectionModel().selection()`의 **range(QItemSelectionRange) 목록만** 보고 구간 커버리지(`_spans_cover`)로 '열/행 전체 선택'을 직접 판정한다(범위 수는 항상 소수 → 0.1ms 이하, 1000배+). 혼합 선택 시 Qt가 범위를 쪼개도(예: `[(0,1,0,0),(3,N,0,0),(2,2,0,5)]`) 구간 합집합으로 정확히 잡는다. → **선택 기반 판정은 selectedColumns/Rows 대신 range 직접 분석으로.** (`gui_viewer.copy_selection`도 같은 방식으로 고쳤다 — 아래 변경 이력 참고.)
-
-> **⚠ 함정 — 대용량 데이터 cross-thread 시그널은 `object`로 넘긴다**: `CSVLoaderThread.load_complete`를 `pyqtSignal(str, list)`로 선언하면, 워커→GUI 큐드 연결에서 PyQt가 중첩 리스트를 **QVariantList로 변환·복사**한다. 이 비용이 워커 `emit`과 **수신 GUI 스레드의 역변환(슬롯 호출 *전*에 GUI 스레드에서 수행)** 양쪽에서 발생해 18만 행 기준 **수 초간 GUI가 얼어붙는다**(읽는 동안 다른 CSV 클릭이 안 먹히던 원인. 프록시 부착(≈80ms)은 무관했음). `pyqtSignal(str, object)`(PyQt_PyObject)는 파이썬 객체를 **참조로** 넘겨 변환·복사가 0이다. 단 참조 전달이라 **emit 후 워커에서 그 데이터를 수정하면 안 된다**(현재는 emit 직후 `return`이라 안전). → 큰 데이터를 스레드 시그널로 넘길 땐 `list`/`dict` 대신 `object`.
+| `CSVFilterProxyModel` | utils/filter_model.py | 열 필터 + Δ 가상 열 + 행/열 숨기기. column_filters(소스 열 키), col_map 열 간접화, hidden_rows/cols(소스 좌표)+마커 섹션(⋯/︙) |
+| `SearchModel` | utils/search_model.py | Ctrl+F 검색 + 하이라이트. 선택 영역 검색(scoped) 지원 |
+| `CSVLoaderThread` | utils/csv_loader.py | 비동기 읽기(utf-8-sig→cp949 폴백). `pyqtSignal(str, object)`로 전달. 캐시 지문(`signature`=stat, `content_hash`=sha256)도 스레드에서 계산 |
+| `view_state`(모듈) | utils/view_state.py | `<CSV폴더>\.viewer`(폴더당 1 JSON)에 사용자 입력만 저장/로드. 원자적 쓰기·머지, envelope/version 게이트 |
+| `EditHistory` | utils/edit_history.py | Undo/Redo 스택. **CSV별 1개**(cache['history']), 상한 20. `Memento`(highlights/fd/widths/rows 4슬라이스, COW). export·복원 판단은 `ViewerWindow` |
 
 ### ViewerWindow 내부 구조
 
 ```
-ViewerWindow(icon_path, csv_folder=None)   # csv_folder=None → 폴더 미선택 '빈 상태'(제목 "CSV Viewer", 목록·경로칸 비움)
-├── icon_path : GUI/res 리소스 경로 (진입점이 resource_dir()로 주입)  ← PPS의 parent.icon_path 결합 제거
+ViewerWindow(icon_path, csv_folder=None)   # None → 폴더 미선택 빈 상태
+├── icon_path : GUI/res 리소스 경로 (진입점이 resource_dir()로 주입)
 ├── cache[csv_file_name] = {
-│     'table_data'  : raw 2D list (헤더 + 데이터 행)
-│     'table_model' : CSVFilterProxyModel  └─ CSVTableModel (rows / highlight_cells)
-│     'last_view'   : (v_scroll, h_scroll)  ← CSV 전환 시 위치 복원
-│     'col_widths'  : [열 너비...]          ← CSV 전환 시 너비 복원
-│     'signature'   : (size, mtime_ns)      ← 재진입 시 변경 감지 1차 게이트
-│     'content_hash': sha256 hex            ← size 같고 mtime만 다를 때 타이브레이커
-│     'status'      : 'ok' | 'empty' | 'fail'
-│     'history'     : EditHistory            ← Undo/Redo 스택(CSV별 독립, 상한 20). 모델 최초 표시 시 baseline 1개로 생성
+│     'table_data'  : raw 2D list (헤더 + 데이터)
+│     'table_model' : CSVFilterProxyModel └─ CSVTableModel
+│     'last_view'   : (v_scroll, h_scroll)        ← CSV 전환 시 복원
+│     'col_widths'/'row_heights' : {인덱스:크기} sparse  ← .viewer 영속
+│     'signature'   : (size, mtime_ns)            ← 재진입 변경 감지 1차
+│     'content_hash': sha256 hex                  ← size 같고 mtime만 다를 때 타이브레이커
+│     'status'      : 'ok'|'empty'|'fail'
+│     'history'     : EditHistory                 ← Undo/Redo(CSV별 독립)
 │   }
-├── FilterHeaderView  (수평 헤더 - 우클릭 열 필터)
-├── CSVLoaderThread   (self.loader_threads 로 추적/정리)
-├── SearchModel       (self.search_model)
-└── EditHistory       (cache[csv]['history'] - Ctrl+Z/Ctrl+Y, 액션 단위 스냅샷)
+├── FilterHeaderView / CSVLoaderThread(self.loader_threads) / SearchModel / EditHistory
 ```
 
-CSV 폴더 위치는 3단계로 독립 관리: `csv_folder_path`(상위 경로) + `csv_folder_name`(폴더명) + `csv_file_name`(현재 파일). 드래그&드롭 / 폴더 버튼 / rename은 `_load_folder`·`_rename_folder`로 처리.
+CSV 위치는 3단계 독립 관리: `csv_folder_path`(상위 경로) + `csv_folder_name`(폴더명) + `csv_file_name`(현재 파일). 드래그&드롭/폴더버튼/rename은 `_load_folder`·`_rename_folder`.
+
+---
+
+## ⚠ 공통 함정 (반복적으로 발목 잡는 것 — 먼저 읽을 것)
+
+1. **`selectedColumns()`/`selectedRows()`는 대용량에서 수 초 걸린다** (열/행 전체 선택 시 전 행 순회: ≈0.8~2.8s). **절대 쓰지 말고** `selectionModel().selection()`의 **range(QItemSelectionRange) 목록만** 분석해 구간 커버리지(`_spans_cover`)로 판정한다(0.1ms 이하). 적용처: `capture_scope`·`copy_selection`·`_full_selection_sections`·`_anchor_rowcol`.
+
+2. **대용량 cross-thread 시그널은 `object`로 넘긴다.** `pyqtSignal(str, list)`는 PyQt가 중첩 리스트를 QVariantList로 변환·복사해 18만 행에서 수 초 GUI 프리즈. `pyqtSignal(str, object)`(PyQt_PyObject)는 참조 전달(변환 0). 단 emit 후 워커에서 그 데이터 수정 금지.
+
+3. **셀/헤더 폰트는 `setFont`가 아니라 모델 `FontRole`/`paintSection`으로 줘야 한다.** `table_csv`에 스타일시트(`background:white`)가 걸려 `table_csv.setFont()`가 **셀 텍스트에 반영 안 됨**(QStyleSheetStyle 함정). → 일반 셀은 `filter_model.data()`의 `FontRole`, 헤더는 QHeaderView가 FontRole을 **아예 안 읽으므로** `paintSection`에서 painter에 폰트 주입. 세로 헤더(행 번호)도 같은 함정.
+
+4. **헤더 eventFilter는 `header.viewport()`에 건다 — `header` 자체에 걸면 마우스 이벤트가 안 온다** (QHeaderView=QAbstractScrollArea). 검증도 `QTest.mousePress/Move/Release`로 실제 디스패치를 태워야 함(직접 호출 금지).
+
+5. **18만 행 성능 패턴**: 행 루프 금지(`setDefaultSectionSize`로 O(1) 스케일) · 대량 resizeSection은 `setUpdatesEnabled(False)`로 repaint thrash 차단 · 헤더 repaint가 전 행 스캔하지 않게 `initStyleOptionForIndex` 오버라이드(아래 변경 이력).
 
 ---
 
 ## 빌드 (PyInstaller)
 
 ```powershell
-& "C:\Users\yslee\anaconda3\envs\sniff_env\python.exe" -m PyInstaller --noconfirm CSV_Viewer.spec
-# 출력: dist\CSV Viewer\CSV Viewer.exe   (onedir = 폴더 통째로 배포, ~89MB)
+& "...\sniff_env\python.exe" -m PyInstaller --noconfirm CSV_Viewer.spec
+# 출력: dist\CSV Viewer\CSV Viewer.exe  (onedir, ~139MB — numpy(openblas)+pyqtgraph 포함)
 ```
 
-- **onedir** (`COLLECT`): 실행 시 압축해제가 없어 프로세스 기동이 빠름. (onefile 금지 — 위 "아키텍처" 참고)
-- **`console=False`** (windowed): 외부 SW에서 실행 시 콘솔창이 뜨지 않음.
-- 리소스는 png·ico·**gif(로딩 스피너)** 모두 포함(과거 PPS.spec은 gif 누락이었음).
-- **⚠ conda PyQt6 함정**: Qt 런타임 DLL(`Qt6Core/Gui/Widgets.dll`)이 `.pyd` 옆이 아닌 `<env>\Library\bin` 에 있어 PyInstaller가 자동수집을 **놓친다**(플러그인만 들어가 frozen 실행 시 크래시). spec에서 `QT_NEEDED` DLL을 **명시적으로 `binaries`에 추가**해 해결 — 그러면 ICU 등 의존 DLL은 자동 추적된다. Qt 모듈을 새로 쓰면(`QtNetwork` 등) `QT_NEEDED`에 추가할 것.
-- `excludes`로 scapy/tkinter/psutil 등 차단.
+- **onedir**(`COLLECT`) + **`console=False`**(windowed, 콘솔창 안 뜸). 리소스는 png·ico·**gif(스피너)** 포함.
+- ⚠ **conda PyQt6 함정**: Qt 런타임 DLL(`Qt6Core/Gui/Widgets.dll`)이 `.pyd` 옆이 아니라 `<env>\Library\bin`에 있어 PyInstaller가 자동수집을 놓친다 → spec에서 `QT_NEEDED` DLL을 **명시적으로 `binaries`에 추가**. Qt 모듈 새로 쓰면(QtNetwork 등) `QT_NEEDED`에 추가.
+- ⚠ **3D 그래프(GLViewWidget) 의존성** (빠지면 `Qt6Core.dll` 크래시 `0xc0000409`):
+  - `QT_NEEDED`에 **`Qt6OpenGL`·`Qt6OpenGLWidgets`** 추가.
+  - `hiddenimports`에 **`PyQt6.QtOpenGL`·`PyQt6.QtOpenGLWidgets`**.
+  - PyOpenGL·pyqtgraph는 **PyInstaller 내장 hook**에 위임 — `collect_submodules`로 통째 끌어오지 말 것(과수집).
+  - ⚠⚠ **numpy는 nomkl(openblas) 빌드 필수**: conda 기본 numpy는 Intel MKL 링크라 `mkl_*.dll` ~600MB가 딸려와 **750MB**로 폭증. `conda install -n sniff_env nomkl`로 openblas 교체 시 **139MB**. 환경 재설치 시 mkl numpy가 다시 깔리면 또 커짐.
+- ⚠ **numpy 2.x `_core` 누락**(frozen 그래프 첫 클릭 시 `ModuleNotFoundError: numpy._core._exceptions` 크래시): PyInstaller 내장 numpy 훅이 numpy 1.x 시절이라 지연 import 순수 모듈을 못 잡음 → spec에서 `collect_submodules('numpy')`로 명시 수집(+`*.tests*`·`f2py`·`distutils`·`mypy_plugin` 등 빌드 전용 필터). `f2py`는 정적분석이 다시 끌어오니 `excludes`에도 추가. UPX 손상 예방 `upx_exclude=['*numpy*','_multiarray*.pyd','libopenblas*.dll','openblas*.dll']`.
+- `excludes`로 scapy/tkinter/psutil/pandas/matplotlib 차단(numpy는 pyqtgraph 필수라 제외 안 함).
 
 ---
 
 ## 배포 (MSI 설치 파일)
 
-외부 노트북 배포용 **WiX 기반 MSI**. 정의/스크립트는 `installer/`, 상세는 `installer/README.md`.
+WiX 기반 MSI. 정의/스크립트는 `installer/`, 상세는 `installer/README.md`.
 
 ```powershell
 .\installer\build_msi.ps1          # dist 기반 MSI 빌드 → installer\out\CSV Viewer Setup.msi
 .\installer\build_msi.ps1 -Rebuild # PyInstaller 재빌드부터
 ```
 
-- per-machine 설치(관리자 권한): `C:\Program Files\CSV Viewer`
-- 시스템 환경변수 `CSV_VIEWER_HOME` = 설치 경로
-- 폴더 / 폴더 빈 공간(배경) 우클릭 → "Open with CSV Viewer(V)" (실행: `"…\CSV Viewer.exe" "%V"`)
-- **설치 상태별 3분기(미설치=설치 / 옛버전=업그레이드 / 같은버전=제거토글)**: 같은 버전 MSI 재실행 = **제거 토글**(`Installed` → `SetProperty REMOVE=ALL` 을 `CostFinalize` 전(seq 999)에 세팅; `/x`·업그레이드 중 구버전 제거와는 `NOT REMOVE`·`NOT UPGRADINGPRODUCTCODE` 로 구분). 옛 버전 위에서 실행하면 **업그레이드**(`MajorUpgrade` 가 `WIX_UPGRADE_DETECTED` → 구버전 제거 후 새 설치). 분기 핵심은 **버전별 ProductCode**(아래 ⚠). 확인창 3종(`confirm_install/upgrade/uninstall.vbs`)이 `WIX_UPGRADE_DETECTED`/`REMOVE` 조건으로 정확히 하나만 뜬다(아래 변경 이력).
-- **⚠ WiX 버전 v5 고정**: v6/v7은 OSMF(상용 유지비) EULA 게이트가 빌드를 막는다. `installer/CSVViewer.wxs`는 v4 네임스페이스라 v5에서 그대로 빌드된다. (`build_msi.ps1`이 `--version 5.0.2`로 설치)
-- **완료 팝업**: 설치/제거 끝에 VBScript MessageBox(`popup_install.vbs`/`popup_uninstall.vbs`)를 `InstallUISequence`의 `ExecuteAction` 직후 띄움. `/qn` 무인설치에선 안 뜸. (WiX v5는 인라인 스크립트 불가 → 외부 `.vbs`를 `ScriptSourceFile`로 참조, 한글 위해 UTF-8 BOM 필수)
-- **⚠ ProductCode = 버전별 결정 GUID(build_msi.ps1 이 산출·주입), UpgradeCode = 고정·변경 금지**: `CSVViewer.wxs` 의 ProductCode 는 `$(var.ProductCode)` 이고, `build_msi.ps1` 이 wxs 의 `Version` 을 읽어 `New-DeterministicGuid(UpgradeCode, ver3)`(SHA1→GUID)로 만들어 `-d ProductCode=` 로 넘긴다. **같은 버전→같은 ProductCode(토글), 다른 버전→다른 ProductCode(업그레이드)**. ⚠ Windows Installer 버전 비교는 **앞 3자리만**(4번째 무시) → GUID 도 `ver3`(major.minor.build)로 파생해야 토글이 정합(`1.0.0.0`↔`1.0.0.5` 는 같은 제품으로 취급). ⚠ wxs 에서 Version 파싱은 **대소문자 구분(`-cmatch`)** — 안 그러면 XML 선언의 소문자 `version="1.0"` 를 잡는 버그(실제로 겪음). `AllowSameVersionUpgrades=yes` 는 이제 **옛 고정-ProductCode(`{5C69FF31…}`) 빌드의 1회성 마이그레이션**용(같은 1.0.0.0·다른 ProductCode 를 업그레이드로 교체).
-- **⚠ 버전 올려 업데이트 배포**: `CSVViewer.wxs` 의 `Version` **앞 3자리 중 하나**를 올리면(예: `1.0.1.0`) ProductCode 가 자동으로 달라져 `MajorUpgrade` 가 구버전 제거 후 새로 설치(=업그레이드). **4번째 자리만 올리면 같은 버전으로 취급돼 업데이트가 안 되고 제거 토글이 된다.** UpgradeCode 는 절대 불변. (과거엔 고정 ProductCode라 업그레이드 자체가 불가했음 — 이 버그를 버전별 ProductCode 로 해결.)
-- **⚠ `build_msi.ps1` 편집 시**: 한글 주석 포함 → UTF-8 **BOM 유지 필수**(없으면 PowerShell 5.1이 cp949로 오독해 파싱 실패).
+- per-machine 설치(`C:\Program Files\CSV Viewer`), 시스템 환경변수 `CSV_VIEWER_HOME`, 폴더/배경 우클릭 "Open with CSV Viewer(V)"(`"…\CSV Viewer.exe" "%V"`).
+- **설치 상태별 3분기**: 미설치=설치 / 옛버전=업그레이드(`MajorUpgrade`) / 같은버전=제거토글(`SetProperty REMOVE=ALL`). 확인창 3종(`confirm_install/upgrade/uninstall.vbs`)이 조건으로 정확히 하나만 뜸. 완료 팝업은 `popup_*.vbs`(`/qn` 무인설치엔 안 뜸).
+- ⚠ **WiX v5 고정**: v6/v7은 EULA 게이트가 빌드를 막음. wxs는 v4 네임스페이스라 v5에서 빌드됨(`build_msi.ps1`이 `--version 5.0.2`).
+- ⚠ **ProductCode = 버전별 결정 GUID, UpgradeCode = 고정 불변**: `build_msi.ps1`이 wxs의 `Version`을 읽어 `New-DeterministicGuid(UpgradeCode, ver3)`로 ProductCode 산출·주입. **같은 버전→같은 ProductCode(토글), 다른 버전→다른 ProductCode(업그레이드)**.
+  - ⚠ Windows Installer 버전 비교는 **앞 3자리만**(4번째 무시) → GUID도 `ver3`(major.minor.build)로 파생. **업데이트 배포 시 앞 3자리 중 하나를 올려야** 업그레이드됨(4번째만 올리면 토글).
+  - ⚠ wxs Version 파싱은 **대소문자 구분(`-cmatch`)** — 안 그러면 XML 선언의 소문자 `version="1.0"`을 잡는 버그.
+  - ⚠ 확인창 VBScript는 **함수형 + `Return="check"` + type 4102**(반환 2=취소). 완료 팝업은 `ignore`/4198. `ExecuteAction` 전에 스케줄해 No=아무 변경 없음.
+- ⚠ **`build_msi.ps1`·`.vbs` 편집 시 UTF-8 BOM 유지 필수**(없으면 PowerShell 5.1이 cp949로 오독).
 
 ---
 
-## 알려진 TODO / 미완성 항목
-
-- (현재 없음) — '셀 선택 시 열 헤더 볼드 미작동'은 해결됨(아래 변경 이력 "열 헤더 폰트 스타일" 참고).
-  - ⚠️ 참고로 헤더 폰트(bold/italic)는 offscreen이 굵기를 렌더하지 않아 자동/스크린샷 검증 불가 → 실Windows 육안이 최종 관문(필터 열의 `⧩` 텍스트 마커는 `headerData`라 offscreen에서도 보임).
+## 알려진 TODO / 미완성
+- (현재 없음)
+- ⚠ spec의 `console=True`는 numpy 진단용 임시일 수 있음 — 그래프 정상 확인 후 `False`로 원복할 것.
 
 ---
 
-## 변경 이력 (최신이 위, 한두 줄 요약)
+## 변경 이력 (최신이 위 — 시간순)
 
-- **표 확대/축소(Ctrl + 마우스 휠, 5단계)**: 셀 크기(열너비·행높이)·글자·마커를 5단계(50/75/100/125/150%)로 줌. 저장 안 함(항상 100%=인덱스 2 로 시작). 트리거=테이블 뷰포트 `eventFilter`의 `Wheel`+Ctrl(소비해 스크롤로 안 샘), 우상단 `zoom_label` 오버레이가 `%`를 0.8초 표시. **줌 전후 스크롤 위치는 비율로 유지**(ScrollPerPixel 이라 콘텐츠 크기 변동 시 절대 픽셀값이 다른 위치를 가리켜 화면이 튀던 것 — `_scroll_fraction` 캡처 후 `_apply_scroll_fraction` 으로 즉시+singleShot 복원). 단계별 **절대값 배열**(`ZOOM_PERCENT/FONT_PT/ROW_HEIGHT/COL_WIDTH/MARKER_PX/VHEADER_W`, 클래스 상수 — 직접 튜닝용)이 단일 출처. 신설 `_apply_zoom`/`_set_zoom_font`/`_show_zoom_overlay`(`gui_viewer`) + `filter_model.set_cell_font_point_size`(Δ italic 폰트 크기 동기화).
-  - ⚠ **셀 크기 스케일 = '직전 단계 대비 비율'**(엑셀식, 사용자 지정 너비도 비율 유지). **열**=각 열 개별 `resizeSection(현재×rc)`(Δ 가상열 포함). **행**=`setDefaultSectionSize`만 바꿔 기본 행 전체를 **O(1)** 로 스케일(18만 행 안전, 행 루프 없음 — 드물게 오버라이드된 행은 절대값 유지). **마커(숨김 열/행 ⋯/︙)**=줌별 절대 두께(req7: 델타·숨김도 함께 확대/축소).
-  - ⚠⚠ **순서 함정 2개**(둘 다 실제로 겪음): ① 열 비율 스케일 루프는 `hdr.setDefaultSectionSize(new)` **보다 먼저** 돌 것 — 기본값을 먼저 바꾸면 기본 열이 그 크기로 점프한 뒤 루프가 또 곱해 **이중 적용**(80→102→130 식 드리프트). ② 마커 절대 두께 적용은 `setDefaultSectionSize` **뒤에** 할 것 — 앞에 두면 setDefault 가 마커를 기본값으로 덮어씀.
-  - ⚠ **`MARKER_SIZE_PX` = 줌 연동 property**(옛 고정 상수 `=18` 제거). 마커를 다루는 모든 호출부(update_table·_restore_memento·_apply_col_width_map·_apply_row_layout)가 자동으로 줌을 따른다. **다시 클래스 상수로 두면 property 를 덮어써 마커가 줌을 안 따라감**(이 버그 겪음).
-  - ⚠⚠ **셀 텍스트 폰트는 `setFont` 가 아니라 모델 `FontRole` 로 줘야 한다**(겪은 버그: 셀크기·헤더글자는 커지는데 *행 셀 글자만* 그대로): `table_csv` 에 스타일시트(`background:white`)가 걸려 있어 `table_csv.setFont()` 가 **셀 텍스트 렌더에 반영 안 됨**(QStyleSheetStyle 함정 — 헤더 FontRole 무시와 동류). 해결 = 일반 셀도 `filter_model.data()` 의 `FontRole` 로 `_cell_font`(줌 pt) 반환(`set_cell_font_point_size` 가 일반/Δitalic 두 폰트 빌드). **100%(pt=None)면 `_cell_font=None` → FontRole 미지정(네이티브 유지)**. **행 번호(세로 헤더)도** 같은 스타일시트 함정이라 `MarkerVHeaderView.paintSection` 정상행 경로에서 `painter.setFont(QFont(self.font()))` 명시 주입(가로 헤더와 대칭). 가로 헤더 글자는 이미 `FilterHeaderView.paintSection` 이 주입해 정상.
-  - ⚠ **100%(인덱스 2) = 현재 모습과 픽셀 동일**: 폰트는 `_base_*_font`(헤더 교체 후 캡처)에서 크기만 바꿔 재구성, 인덱스 2 면 base 폰트 그대로(배열의 `FONT_PT[2]`는 미적용·참고용). 셀/마커 기본은 80/20/18. `update_table`도 하드코딩 80/20/18 대신 `ZOOM_*[_zoom_index]` 사용 → **줌 상태로 다른 CSV 전환해도 동일 배율 유지**(폰트는 setFont 가 setModel 에도 살아남고, 새 proxy 의 Δ italic 만 재동기화). `reset_analysis`도 줌을 100%로 되돌림(raw 뷰는 배율도 기본). 줌 리사이즈는 `_suppress_width_record` 안 → undo/히스토리·`.viewer` 무영향.
-  - ⚠ 가장 작은 단계(50%)의 마커는 Qt `minimumSectionSize`(작은 폰트에서 ~13px)에 클램프돼 배열값 12 가 13 으로 뜰 수 있음(무해). 검증: offscreen — 50~150% 라운드트립 드리프트 0(80↔102↔124↔80)·Ctrl+휠 소비·Ctrl 없으면 스크롤·Δ열 스케일·마커 18↔28↔12·CSV 전환 배율 유지·reset 100% 복귀 PASS. **글자/렌더 체감은 실Windows 육안 최종.**
+> 형식: **헤드라인** + 살아있는 ⚠ 함정만. 구현 서사·'사용자 합의'·검증 PASS 로그는 코드가 정답이라 생략함. 새 항목도 이 형식으로(헤드라인 한두 줄 + 함정), **항상 이 목록 맨 위에 추가**.
 
-- **MSI 설치 상태별 3분기(미설치=설치 / 옛버전=업그레이드 / 같은버전=제거토글) — 버전별 ProductCode 로 해결**: 옛 버전이 깔린 PC 에서 새 버전 MSI 를 실행해도 업그레이드가 안 되고 '제거' 확인창만 뜨던 버그 수정. **근본 원인 = ProductCode 를 모든 버전이 같은 고정 GUID(`{5C69FF31…}`)로 박아둔 것** — Windows 가 다른 버전 MSI 도 '같은 제품 이미 설치됨(`Installed`)'으로 봐 `SetProperty REMOVE=ALL` 토글이 먼저 걸려 업그레이드 경로(`MajorUpgrade`)가 죽었다(같은 ProductCode+다른 버전 = 설치 에러이기도 함). **해결 = ProductCode 를 버전별 결정 GUID 로**: `build_msi.ps1` 이 wxs 의 `Version` 을 읽어 `UpgradeCode` 를 네임스페이스로 한 SHA1→GUID(`New-DeterministicGuid`)를 만들어 `-d ProductCode=` 로 주입, wxs 는 `ProductCode="$(var.ProductCode)"`. 같은 버전→같은 ProductCode(`Installed`→토글), 다른 버전→다른 ProductCode(`Installed`=거짓→`MajorUpgrade` 가 `WIX_UPGRADE_DETECTED` 로 구버전 제거 후 설치). `FindRelatedProducts` 가 자기 ProductCode 는 제외하므로 같은 버전 재실행은 업그레이드로 오인 없이 정확히 토글. 신설 `confirm_upgrade.vbs`(+`Binary`/`CustomAction`/`InstallUISequence` 1줄) 로 확인창 3종이 조건으로 정확히 하나만 뜸 — 설치(`NOT Installed AND NOT REMOVE AND NOT WIX_UPGRADE_DETECTED AND NOT WIX_DOWNGRADE_DETECTED`) / 업그레이드(`WIX_UPGRADE_DETECTED AND NOT REMOVE`, "Do you wish to update version?") / 제거(`REMOVE="ALL"`).
-  - ⚠ **3자리 버전으로 GUID 파생**: Windows Installer 버전 비교는 앞 3자리(major.minor.build)만 보고 **4번째는 무시** → GUID 도 `ver3` 로 만들어야 `1.0.0.0`↔`1.0.0.5` 가 같은 ProductCode(=같은 제품=토글)로 정합. **업데이트 배포 시 앞 3자리 중 하나를 올려야** 업그레이드가 된다(4번째만 올리면 토글).
-  - ⚠ **버전 파싱 = 대소문자 구분(`-cmatch`)**: `Version="..."` 정규식이 기본 `-match`(대소문자 무시)면 XML 선언의 소문자 `version="1.0"` 를 먼저 잡아 ProductCode 가 `1.0` 기준으로 틀어진다(실제로 겪음 → `-cnotmatch` 로 수정). `UpgradeCode` 도 같은 파일에서 파싱.
-  - ⚠ **`AllowSameVersionUpgrades=yes` 역할 변경**: 이제 옛 고정-ProductCode 빌드(같은 1.0.0.0·다른 ProductCode)가 깔린 기존 PC 를 **1회성 마이그레이션**(업그레이드로 깔끔히 교체)하는 용도. 미래의 같은 버전끼리는 ProductCode 가 같아 자기 제외되므로 이 옵션과 무관(토글 안 깨짐). `MajorUpgrade` 의 다운그레이드 차단(`DowngradeErrorMessage`/`WIX_DOWNGRADE_DETECTED`)은 그대로.
-  - ⚠ 검증: `wix build` PASS + MSI 표 덤프로 확인 — Property(ProductCode=`{23A1B7A4…}`=`v1.0.0` 결정GUID·UpgradeCode 불변), Upgrade(≤1.0.0.0 inclusive→`WIX_UPGRADE_DETECTED`+MigrateFeatures attr 513 / >1.0.0.0→`WIX_DOWNGRADE_DETECTED` OnlyDetect attr 2), CustomAction 3종 type 4102, InstallUISequence 순서(FindRelatedProducts 25 → Confirm 3종 1297~1299 → ExecuteAction 1300, 조건 상호배타), SetREMOVE seq 999<CostFinalize 1000. **실제 Yes/No·업그레이드 동작은 관리자 실설치(옛버전→신버전) 육안 최종.**
+- **3D 그래프 화면 저장(Ctrl+S)/복사(Ctrl+C)**(gui_graph.py): 그래프 창에서 **현재 graph_area 화면 그대로** PNG 저장(파일 선택창)·클립보드 복사. `_grab_graph_image`(캡처)·`save_graph_image`·`copy_graph_image`·`_show_toast`(코드 생성 알림). 단축키는 `QShortcut`(WindowShortcut)이라 **별도 top-level 창이라 메인 뷰어 Ctrl+S/Ctrl+C 와 충돌 없음**. 저장 기본 파일명=`<csv title>_graph.png`(`set_data` 의 title, 파일명 금지문자 치환).
+  - ⚠ **GL 씬은 `graph_area.grabFramebuffer()`(QOpenGLWidget) 로만 캡처된다 — `QWidget.grab()`/`self.grab()` 은 GL 내용이 검게 빠질 수 있음**. grabFramebuffer 는 **GL 아이템(궤적·점·마커·축/눈금 GLTextItem)만** 잡고, graph_area 위 오버레이(방향 gizmo·호버 라벨)는 GL 이 아니라 별도 렌더라 **빠진다 → grab 위에 `_gizmo`·`_hover_label` 만 painter 로 합성**해야 화면과 같아짐. **시점초기화 버튼은 합성 제외**(배경 alpha=0 라 화면상 안 보임 — grab 하면 불투명 박스로 찍혀 오히려 화면과 달라짐).
+  - ⚠ **DPR 처리 = 반환 이미지 실제배율로 박기**: grabFramebuffer 는 device px(고DPI) 라 `scale = img.width()/area.width()` 를 `img.setDevicePixelRatio(scale)` 로 박아 둬야 이후 painter 가 **논리좌표(=자식 위젯 `pos()`)** 로 정확히 합성된다(Qt 버전 따라 grab 이 DPR 을 안 박는 경우 대비).
+  - ⚠ **offscreen 은 실제 GL 컨텍스트가 없어 grabFramebuffer 가 null QImage** → 캡처 검증은 실Windows 육안(저장 PNG/붙여넣기에 **축 눈금·gizmo 까지** 나오는지 확인). 코드는 null 가드(`img.isNull()`→실패 토스트)로 offscreen 에서도 크래시 없음.
+  - ⚠ **편집 가능한 `lineEdit_*` (축 범위칸)에 포커스 중 Ctrl+C 는 텍스트 복사**(QLineEdit 의 ShortcutOverride)로 이미지 복사 안 됨 — 의도된 동작(그 외 포커스에선 이미지 복사).
 
-- **행/열 숨기기(hide) — 드래그-to-음수너비 트리거 + 합성 마커 섹션(⋯/︙) + 더블클릭 펼침**: 엑셀식 행/열 숨기기. 값 기준 필터와 **직교하는 '위치(소스 인덱스) 기반' 분석 상태**(`hidden_rows`/`hidden_cols`, 소스 좌표)를 프록시에 추가하고, 숨겨진 **연속 구간마다 가느다란 마커 섹션 1개**(열=`⋯`, 행=`︙`, 18px 회색)를 합성해 그 자리에 끼운다. 트리거=섹션 경계를 그 섹션 시작 끝 너머로 드래그(음수 너비/높이), 펼침=마커 더블클릭. Δ 가상열·필터(`_accepted`)·Undo(`fd` 슬라이스)·`.viewer` 플럼빙을 **그대로 재사용**. 신설/수정: `filter_model`(hidden 상태·마커 합성·hide/unhide API·export/restore), `gui_header`(`MarkerVHeaderView` 신설 + 가로 마커 페인트 + 마커 우클릭 무시), `gui_viewer`(드래그 감지·펼침·너비 캡처/복원), `view_state`(`pack_runs`/`unpack_runs`·schema 3), `search_model`(마커 행 스킵).
-  - ⚠ **마커 = 모델 합성 섹션(방안 A)**: 열=`_col_kind` 에 `'hidemark'` 추가(Δ 패턴과 대칭, `_col_marker_src`), 행=`_accepted` 에 **음수 sentinel `-(run_id+1)`** 끼움(run_id→소스행은 `_row_marker_src`, 마커 proxy행은 `_row_marker_pos`). `mapToSource`/`data`/`flags`/`headerData` 가 마커 분기. **마커 셀은 선택 가능**(완전선택 판정·범위검색이 마커 위로 연속되게) + 빈 표시 + 회색 배경. `_compute_snapshot`(Δ)엔 sentinel 제외한 실제 소스행만 넘긴다. 마커 글리프 페인트(`gui_header._paint_hidemark`): **열 `⋯`=가운데+볼드**(좁아 작아 보여 강조), **행 `︙`=우측 정렬**(행 번호와 동일하게 오른쪽에 붙임).
-  - ⚠ **트리거 = 마우스 geometry(클램프된 크기 아님)**: Qt `sectionResized` 는 `minimumSectionSize` 로 클램프돼 **음수를 안 준다** → press 때 리사이즈 그립(`_capture_resize_grip`/`_section_at_grip`)을 잡고, release 때 `attempted = 마우스좌표 − 섹션시작끝 ≤ -2px`(`HIDE_DRAG_THRESHOLD_PX`)면 숨김. **최소폭과 무관**(기본 16px 그대로 — 5px 로 낮췄다가 너무 작아 복원; 측정값 16px). 이미 최소폭인 섹션도 press 로 잡아 숨길 수 있다. ⚠⚠ **반드시 헤더 `viewport()` 에 eventFilter**(헤더 객체엔 마우스 이벤트 안 옴 — 기존 동시조정 함정과 동일). 다중 완전선택이면 그 집합 전체 숨김(연속이면 마커 1개) — `_full_selection_sections` 재사용(18만 행 `selected*()` 함정 회피).
-  - ⚠ **모델 reset 은 섹션 크기를 '위치(proxy 인덱스) 기준'으로 보존**(측정 확인) → '전염' 버그: 열 수가 바뀌면(2열→마커1개) 뒤 섹션이 밀려, 숨긴 섹션이 있던 위치의 비기본 크기를 **밀려든 다른 섹션이 물려받는다**(예: 8~10행 높이 50으로 키우고 숨기면 11행이 50으로 커짐). 해결: 숨김/펼침 시 **소스 기준으로 캡처·복원**.
-    - **열**: `_col_width_map` 이 *모든* 보이는 열을 캡처→`_apply_col_width_map` 이 *전부* 재적용 → 위치 누수가 원천적으로 덮여 전염 없음(Δ는 base+1). 열은 수 적어 전수 캡처 OK.
-    - **행**: 18만 행을 전수 캡처할 수 없어 다른 전략 — `_capture_row_layout` 이 reset *전* '비기본 행 위치'(마커는 항상 포함, 오버라이드는 `_rows_dirty` 일 때만 스캔)를 기억해 두고, `_apply_row_layout` 이 reset *후* 그 위치들을 기본으로 **청소**한 뒤 소스 기준 높이를 재적용 → 전염 제거. (열처럼 전수 재적용이 아니라 '이전 비기본 위치만 청소'가 핵심.)
-    - 마커는 항상 18px 명시(`MARKER_SIZE_PX`). `update_table`·`_restore_memento` 도 마커 18px 재설정. 저장(`_scan_overrides`)은 **마커 섹션 skip**.
-    - **마커 = 크기 고정(Fixed 리사이즈 모드)**: 사용자가 마커 경계를 드래그해 리사이즈 못 하게 마커 섹션만 `Fixed`, 나머지는 `Interactive`(`_fix_marker_sections`, 마커 사이징하는 4곳에서 호출). ⚠ **리사이즈 모드도 크기처럼 reset 시 '위치 기준' 누수**(펼친 자리 섹션이 Fixed 로 남음) → **글로벌 `setSectionResizeMode(Interactive)` 로 한 번에 되돌린 뒤 현재 마커만 Fixed**(측정 0.2ms·18만 행 무관·크기 보존). 마커 없을 때 호출하면 스테일 Fixed 정리(CSV 전환·F5 안전).
-    - ⚠ **Fixed 는 사용자 드래그만 막고 프로그램적 `resizeSection` 은 못 막는다** → 다중선택 동시조정 전파(`_finalize_resize`)가 마커를 함께 늘리던 엣지케이스 있었음. `_full_selection_sections` 가 **마커 위치를 결과에서 빼**(`marker_*_positions()` set 차집합, O(마커 수)) 전파·다중숨김 대상에서 제외해 해결.
-  - ⚠ **펼침 크기 정책 = 열·행 모두 원래 크기 복원(엑셀식, 대칭)**: 숨기기 전 크기를 소스키로 보관(`hidden_col_sizes`/`hidden_row_sizes`) → 더블클릭 펼침 시 원복, `.viewer` 저장 대상. (초기엔 '행=기본높이'였다가 사용자 요청으로 **열과 동일하게 원복**으로 통일 — 직전 정책 뒤집음.) ⚠ 숨길 때 보관하는 '원래 크기'는 **press 시점(드래그로 줄어들기 전)** 크기(`pre_size`)라, 드래그-숨김으로 섹션이 최소폭까지 줄어도 정확. ⚠ '리사이즈 직후 350ms 내 즉시 숨김'의 극히 드문 경우만 그 리사이즈가 Undo 히스토리에 별도 커밋되기 전이라 *Undo* 가 직전 커밋 크기로 가지만, **더블클릭 펼침은 `hidden_*_sizes` 라 항상 원복**.
-  - ⚠ **필터 ∧ 숨김 직교**: 보임 = 필터통과 ∧ 비숨김(`_rebuild` 에 `i not in hidden_rows`, `_rebuild_columns` 에서 숨긴 열 skip). 숨김은 **필터 도메인 불간섭**(`_row_passes`·드롭다운 후보값은 hidden 무시) · **숨긴 열의 행-필터는 유지**(⧩, 펼치면 복귀) · **마커는 숨김 차원만 표시**(필터로만 빠진 행엔 마커 없음; 규칙="보이는 두 행 사이 gap 에 숨긴 행 ≥1 → 마커 1개"라 필터로 빠진 행이 끼어도 1개로 병합). 더블클릭 펼침은 그 gap 의 `hidden_rows` 만 해제(필터는 그대로 적용).
-  - ⚠ **Δ 는 소스 따라감(ⓓ)**: 기준 소스 열을 숨기면 그 Δ 도 함께 숨김(`_rebuild_columns` 가 숨긴 sc 에서 `continue` → src·delta 둘 다 빠짐). Δ 열 자체의 드래그-숨김은 무시(`_do_hide_gesture` 가 `is_delta_column` 걸러냄 → Δ 제거는 기존 X 버튼). 숨긴 base 의 `_src_to_pcol = -1` 이라 `add/remove_delta`·`setFilterForColumn`·`_emit_delta_bg` 등에 `>= 0` 가드 추가.
-  - ⚠ **검색/복사 마커 제외**: `source_columns()` 가 마커 열을 `-1`(Δ와 동일)로 → 검색 자동 스킵. 검색은 **마커 행도 스킵**(`mapToSource` 무효→`row()<0`→`rows[-1]` 음수인덱스 오접근 방지). 복사는 마커 열을 `cols` 에서 제외 + 마커 행(`accepted[r]<0`) 스킵.
-  - ⚠ 검증: offscreen 종합(모델 export/restore[양축 크기보관]·필터∧숨김 gap병합·Δ따라감 / GUI 열·행 숨김·너비·높이 보존·**펼침 양축 원복**·**전염 없음**[8~10 키우고 숨겨도 11 불변]·다중선택 동시숨김·Undo/Redo·reset·`.viewer` 자동복원·**`QTest` 실 마우스 드래그→숨김**[viewport eventFilter 회귀]) PASS. **마커 글리프(⋯/︙) 렌더·드래그 손맛은 실Windows 육안 최종**(offscreen 글리프 미렌더).
+- **3D 그래프 마우스 호버 정보(점=좌표/트랙/시간/행, 선=트랙명)**(gui_graph.py): `graph_area` 위에서 마우스를 데이터 점/마커에 올리면 다크 오버레이 라벨에 그 점의 **원본 x/y/z 값 + 트랙명 + 시간 + 행번호**가 뜨고 점에 강조 헤일로 링(`_hover_ring`, `_ON_TOP_GL`)이 붙는다. 점이 아닌 선분 위면 **트랙명만**. `_update_hover`(호버 핸들러)·`_ensure_hover_index`(피킹 인덱스)·`_project_screen`(투영)·`_nearest_segment`(선 거리)·`_show_point_hover`/`_show_overlay`(전시).
+  - ⚠⚠ **GLViewWidget 은 3D 피킹이 없다 → '화면 투영 + 최근접'으로 직접 판정**: 그려진 점들을 현재 카메라로 화면픽셀에 투영해 커서와의 거리 `argmin`(점 `PICK_RADIUS_PT`=13px) / 점-선분 거리(선 `PICK_RADIUS_LINE`=8px). **점마다 `QMatrix4x4.map()` 루프 금지**(18만 점 프리즈) → 행렬 1개를 numpy 로 일괄 적용.
+  - ⚠⚠ **투영 행렬 = `_marker_label.compute_projection()`(= `ndc_to_viewport × mvpMatrix`, world→논리 화면픽셀)**. `QMatrix4x4.data()` 는 **열우선(OpenGL)** 이라 `reshape(4,4)` 가 (표준행렬)ᵀ → 행벡터 점들에 대해 **`pts_h @ data` 가 곧 M·p**(전치 불필요). `map()` 과 3.7e-5px 일치(offscreen 행렬검증). 카메라 앞만(`w>1e-6`).
+  - ⚠⚠ **`compute_projection` 의 projection/modelview 스택은 `paintGL` 에서 `clear()+append()`(pop 안 함)** → **첫 paint 이후엔 paint 밖(호버=마우스이벤트 핸들러)에서도 `currentProjection/currentModelView` 가 유효**(이 설계의 전제). **offscreen 은 실제 paintGL 이 안 돌아 스택이 비어 `IndexError`** → 단위테스트는 `graph_area.setProjection(region,region)`+`setModelview()` 로 paint 와 동일하게 수동 시드해야 투영 검증 가능. (런타임 첫 호버가 paint 보다 빠른 희박한 경우는 try/except 로 None→숨김.)
+  - ⚠ **좌표계는 둘 다 '논리 픽셀'이라 DPR 일치**: `compute_projection` 은 `view().rect()`(논리), `ev.position()` 도 논리. projection 은 aspect-only 라 DPR 무관. → 커서와 투영점이 같은 좌표계.
+  - ⚠ **성능 = lazy/dirty**: `_draw_lines_and_markers` 는 그린 트랙별 idx(`_drawn_tracks`, prefix 는 view 라 무복사)만 기록하고 `_hover_dirty=True` 만 세움 → 피킹 인덱스(`_hover_pts/rows/tid`·세그먼트 `_seg_*`)는 **첫 호버 때 1회**(`_ensure_hover_index`) 재구성 → 재생/스크럽 핫패스 비용 0. 투영·점선거리 전부 벡터화. (드래그=버튼 눌림 중엔 호버 억제.)
+  - ⚠ **호버 대상은 '솔리드로 그린' 점/선만**(ghost=미도달 전체경로 제외). 마커(현재 위치)도 솔리드 prefix 의 마지막 점이라 호버됨. 단일 궤적(트랙 열 없음)은 선 히트 시 표시할 트랙명이 없어 숨김. 세그먼트는 트랙 내부 연속쌍만(트랙 경계 안 이음).
+  - ⚠ **GL 아이템 가시성은 `visible()`**(QWidget `isVisible()` 아님 — `_hover_ring` 등). 오버레이 라벨·링은 **코드로만 생성**(`.ui` 무수정, gizmo 패턴), 라벨은 `WA_TransparentForMouseEvents`(호버 자체를 안 가림). `mouseMoveEvent`/`leaveEvent` 인스턴스 교체 + `setMouseTracking(True)`(버튼 없이 이동 이벤트). **링 렌더·오버레이 외형·커서 정렬은 실Windows 육안검증**(offscreen 미렌더).
 
-- **폴더 버튼(`button_csv_folder`) = 폴더 선택창 → Windows 탐색기 열기로 변경**: 클릭 시 폴더 선택 다이얼로그 대신 `edit_csv_path`(=`csv_folder_path`, 상위 경로)를 `os.startfile`로 탐색기 새 창에 연다. 경로가 비었거나 더 이상 존재하지 않으면 `_app_dir()`(frozen=`dirname(sys.executable)`, 개발=`dirname(abspath(sys.argv[0]))`)로 대체. 신설 `open_folder_in_explorer`/`_app_dir`(`gui_viewer`) + 버튼 connect 교체 + 툴팁("Open folder in Explorer") + `import sys`.
-  - ⚠ **`open_csv_folder`(폴더 선택창)는 그대로 유지** — 빈 창 시작(`csv_viewer.py`의 `QTimer.singleShot(0, open_csv_folder)`)과 `edit_csv_path` **텍스트 클릭**(`mousePressEvent`)이 계속 사용. 즉 폴더 변경 수단은 (a) 경로 텍스트 클릭=선택창, (b) 드래그&드롭으로 유지되고 **버튼만** 탐색기로 바뀜. (버튼↔텍스트클릭이 과거엔 '동일 동작'이었으나 이제 의도적으로 분리 — 해당 주석도 갱신.)
-  - ⚠ **여는 건 상위 경로(parent)** — `edit_csv_path`는 보는 CSV 폴더가 아니라 그 *상위* 폴더라, 탐색기엔 형제 CSV 폴더들이 보인다(거기서 다른 폴더를 드래그해 되넣기 좋음 — 선택창 제거와 정합). 보는 폴더 자체를 열려면 `os.path.join(csv_folder_path, csv_folder_name)`로 바꿔야 함.
-  - ⚠ 검증: offscreen — `os.startfile` 몽키패치로 타깃만 캡처(유효 경로→그 경로, 빈/무효→`_app_dir()`, `_app_dir()`=실재 디렉터리) PASS. **실제 탐색기 창 오픈은 실Windows 육안 최종.**
+- **3D 그래프 카메라 방향 gizmo(좌상단 `_AxisGizmo` 오버레이)**: reset 버튼 자리에 실제 그래프 축과 동일한 각도로 도는 작은 x(빨강)/y(초록)/z(파랑) 축 표시기.
+  - ⚠⚠ **원근 투영(perspective)으로 그린다 — 정사영(`mapVector`)이 아님**: 씬과 동일한 `projectionMatrix(viewport) × viewMatrix` 로 world 원점(0,0,0)→각 축끝(+`AXIS_LEN`)을 화면에 투영하고, 그 화면 변위(`tip−origin`)를 코너에 축소(`_project_axes`). **회전만 쓰면(`mapVector`) '축이 화면 어디에 있느냐'에 따른 원근 전단(shear)을 놓쳐 실제 축과 ≈10~12° 어긋난다** — 씬의 축은 화면 중앙이 아니라 큐브 코너(원점, center=(L/2,…)에서 벗어남)에서 뻗으므로 foreshortening 이 각도를 바꾼다. 같은 파이프라인이라 gizmo 각도/원근단축이 씬과 **구조적으로 일치**(offscreen 행렬검증: gizmo 각도 == origin→L 씬 축 각도). 길이는 '가장 긴 축=반경 R' 공통배율로 축소해 상대 단축 보존.
+  - ⚠⚠ **실시간 추종 = `graph_area.frameSwapped` → `_gizmo.update`**(매 GL 프레임 swap 후): 카메라가 바뀌면 GL 이 반드시 재렌더하므로 드래그/휠/`setCameraPosition` 등 **출처와 무관하게 항상 화면과 동일 카메라**로 다시 그린다. **마우스 이벤트만 후킹하면 일부 경로에서 갱신을 놓쳐 gizmo 가 옛 각도에 멈춤**. `gizmo.update()` 는 자식 위젯 repaint 라 `paintGL` 을 안 불러 재렌더 루프 없음. (`GLViewWidget`=`QOpenGLWidget` 이라 `frameSwapped` 보유.)
+  - ⚠ **앞/뒤 페이드는 위치무관 축방향 eye z**(`mapVector(축).z()`, 음수=뒤로 향함 → 알파 흐리게 + 앞축이 위로 오게 depth 정렬). 원근투영의 화면각도와 분리(페이드는 부호만 필요).
+  - ⚠ **클릭은 gizmo 가 아니라 아래 버튼이 받는다**: gizmo 는 `WA_TransparentForMouseEvents` 마우스-투과 + `raise_()`(위라 항상 보임), 버튼을 gizmo 크기(31→58px)로 `setGeometry` 키워 전 영역 클릭=시점초기화. **geometry 는 코드로만 조정**(`_setup_gizmo`) → `ui/` 생성본은 손대지 않음. **선/폰트 렌더는 실Windows 육안검증**(offscreen 미렌더).
+- **3D 그래프 시점 초기화 버튼(`button_graph_reset`)**: 좌상단(`graph_area` 자식 오버레이) 버튼 → `_reset_view` 가 현재 선택 축 기준 **초기 시점**(각도 `_view_for`·기본 거리 `_base_distance`·큐브 중심)으로 카메라 복귀(회전/휠 줌/팬 해제). 시간·자취·트랙 선택은 유지. ⚠ **`_last_sel=None` 후 `_redraw`** 호출해야 같은 축 조합이어도 각도가 강제 재설정됨(`_frame_scene` 은 `sel` 이 바뀔 때만 각도 적용). 텍스트/아이콘은 추후 결정(현재 빈 텍스트). `.ui` 에 버튼 추가 후 `_ui_py_generate.py`/pyuic6 로 `widget_graph.py` 재생성(생성본 수기수정 금지).
 
-- **필터 팝업 Apply/Close가 scrollArea에 가려지던 문제 해결(창 최소높이 = 매직 상수 → 레이아웃 실측값)**: 값 개수가 많아 `scrollArea`가 최소높이(220)에 도달하면 아래의 Apply/Close/Clear 버튼이 scrollArea에 덮이던 버그. 원인은 `gui_filter.create_items`의 창 최소높이가 `scrollbox_height+120`로 하드코딩돼 실제 chrome(라벨·검색칸·Apply/Close·Clear·Tools 프레임·여백 ≈137px)을 **과소평가** → 창이 layout 실제 최소(356)보다 작은 340으로 떠서, 그 좁은 공간에서 scrollArea가 자기 최소(220)를 고수하며 버튼 위로 흘러내림. 해결: `self.layout().activate()` 후 `self.setMinimumHeight(self.layout().minimumSize().height())`로 **레이아웃 실측 최소**를 사용 → 항목 수에 맞춰 자동 보정(적으면 203~263, 많으면 356), max는 그대로 400.
-  - ⚠ **명시적 `minimumHeight`가 layout 최소보다 작으면 그 작은 값이 우선**된다(layout 최소가 자동 floor가 되지 않음 — 실측 확인). 그래서 반드시 layout 실측값(또는 그 이상)으로 줘야 함. `.ui`의 `setMinimumSize(200,171)`도 같은 함정이라 코드에서 덮어야 함. **Designer 변경 아님**(코드 한 곳). 참고로 maxsize 400은 `.ui`의 600×600이 아니라 `create_items`의 `setMaximumSize(QSize(1100,400))`가 결정.
-  - ⚠ 검증: offscreen geometry(n=1·4·15·50·300·2000 모두 scrollArea↔Apply 겹침≤0·Tools 프레임 비클립·창높이≤400) PASS. **겹침은 순수 geometry라 offscreen이 사실상 확정**(Bold 렌더류와 달리 좌표 계산이라 육안 불필요. 다만 실Windows 폰트 metric이 다르면 layout 최소도 같이 커져 자동 보정됨).
+- **3D 그래프 시간축 재설계: 공유 타임라인 + 트랙별 자취(trail) + 재생**(gui_graph.py): combo_time 열을 고르면 **자취 모드**(각 트랙을 시간순 정렬해 시각 T 까지의 prefix 만 그리고, **트랙별 색 마커**가 같은 T 에 동기화돼 이동), `(row #)`/미선택이면 **전체 모드**(궤적 전부·마커/재생 없음). ▶ 재생(`button_time_play` 토글)+배속(`button_time_speed` 0.5~4×)을 QTimer 로 구동. 현재 시각은 `plainTextEdit_timestamp` 에 '현재/총' 표시(옛 `lineEdit_time` 은 UI 에서 삭제됨).
+  - ⚠ **표시 모드는 토글 위젯이 아니라 'time 열 선택 여부'로 결정**(자취 vs 전체). 꼬리(window) 모드는 일부러 없음(사용자 합의).
+  - ⚠ **자취 모드 = 전체 경로 ghost + 도달 구간 솔리드 2겹**: 미도달 부분도 형태가 보이도록 트랙 전체 경로를 **흐린 색**(`_ghost_color`=배경↔트랙색 `GHOST_FRACTION` 보간, 가는 선 `_add_ghost_line`, 점 없음)으로 먼저 깔고 그 위에 T 까지의 자취(진한 색+점)+마커를 얹는다. 첫 표본 시각보다 T 가 이른 트랙은 **ghost 만**(staggered 등장). 프레이밍(`all_pts`)은 trail prefix 가 아니라 **전체 경로 기준**이라 재생 중 카메라가 안 흔들림. (ghost 도 매 틱 재생성 → 큰 데이터 시 비용 2배, 위 성능 메모 참조.)
+  - ⚠ **시간 파서 `parse_time_value`(순수함수, offscreen 테스트 가능)**: 순수 숫자(ms 카운트)·`H:M:S(.f)`·`M:S(.f)`·날짜+시간(`:` 토큰만)·뒤따르는 `;`/`,`/공백 모두 허용 → float(초). 열이 파싱되면 실제 시간값 타임라인, 열을 골랐지만 파싱 실패면 **행 인덱스 폴백**(여전히 자취), `(row #)`면 시간 비활성(전체). 시계표기 여부(`_col_looks_clock`)로 타임스탬프 포맷 분기(`format_clock`).
+  - ⚠ **표시 시각은 '실제 표본 시각'으로 스냅**(보간 금지): 슬라이더는 `0..STEPS` 를 `[t0,t1]` 연속 T 로 매핑하는데 이 T 는 데이터에 없는 보간값 → `_current_time`(연속, **내부용** 자취 cutoff/마커 frontier)과 `_current_sample_time`(전 트랙 합친 실제 표본 시각 `_time_sorted_all` 에서 `searchsorted` 로 T 이하 최근값) 을 분리. 타임스탬프 표시는 **반드시 후자**(`_current_time` 을 표시에 쓰면 `00:04.750` 같은 가짜 시각이 찍힘).
+  - ⚠ **자취 prefix = `np.searchsorted` O(log n)**: 트랙×시간 정렬 캐시(`_track_sorted`/`_track_sorted_times`, `_rebuild_track_order`)를 **트랙/시간 열 바뀔 때만** 갱신. `argsort(kind='stable')` 라 NaN 은 끝으로 가 자취에서 자연 제외. 마커=prefix 마지막 유한 점. 트랙 첫 표본 시각보다 T 가 이르면(k≤0) 그 트랙은 아직 안 나타남(staggered 등장).
+  - ⚠ **재생/스크럽 핫패스 = `_draw_lines_and_markers`(선·마커만)** — 축·그리드·카메라는 안 건드림. 구조 변경(축·범위·트랙·시간 열·새 CSV)만 `_redraw`(=`_draw_lines_and_markers`+`_frame_scene`). 슬라이더 `0..SLIDER_STEPS(1000)` 분수로 T 매핑, 재생은 `_pos` float 누산기(정수 슬라이더 끊김 방지; **`sliderMoved` 로 사용자 드래그만** 누산기 동기화, 프로그램적 `setValue` 는 제외).
+  - ⚠ **마커 = 트랙별 색**(옛 노랑 단일 `MARKER_COLOR` 폐기). `GLScatterPlotItem` 1개에 N점(트랙 수). 다중 트랙이라 3D 좌표 라벨은 생략(현재 시각은 `plainTextEdit_timestamp` 로).
+  - ⚠ **축/그리드는 그릴 점이 없어도 유지**: `_frame_scene` 은 `sel`(선택 축)+축 범위(정규화 큐브)로만 축·그리드·눈금·카메라를 그린다 → 트랙 전부 해제·전부 NaN·재생 시작 전이라도 축/그리드가 남는다. (옛 `if not all_pts: return` 가드가 이걸 통째로 숨겨 버그였음 → 제거, `all_pts` 파라미터도 삭제. 마커 표시/숨김은 `_update_markers` 가 단독 책임.)
+  - ⚠ **데이터 점이 흰색으로 번지던 버그 = `GLScatterPlotItem` 기본 블렌딩이 가산(additive, `GL_SRC_ALPHA,GL_ONE`)**: 어두운 배경서 인접 점이 겹치며 밝기 누적 → 중심이 흰색. 해결=`_add_line` 의 점에 `setGLOptions('translucent')` + 색을 `_dot_color`(트랙색×`DOT_DARKEN=0.62`)로 살짝 어둡게. (선도 기본 additive 지만 얇아서 티 덜 남 — 점만 손봄.)
+  - ⚠ **위젯은 `widget_graph.ui` 에 사용자가 추가**(`button_time_play`/`button_time_speed`/`plainTextEdit_timestamp`) → `ui/` 생성본 직접수정 금지, 로직만 gui_graph 에. 큰 데이터(18만 행) 단일 트랙 재생 시 매 틱 prefix `_stack` 비용이 큼 — 필요 시 축/시간 시그니처 키로 정규화 점 캐시 도입 여지(현재 미적용).
 
-- **열/행 크기 저장 = sparse 그룹 포맷 + 행높이 .viewer 영속화(열과 parity)**: `.viewer` 의 `col_widths` 를 전체 배열에서 **'기본값과 다른 것만' `{크기:[인덱스]}` 그룹**(하이라이트와 동일 철학)으로 바꾸고, **`row_heights` 를 신설**해 행높이도 저장 대상에 포함(열과 완전 동일 — Ctrl+S/.viewer + CSV 전환 cache 둘 다). 인메모리(cache)는 `{인덱스:크기}` sparse, 파일은 `{크기:[인덱스]}` 그룹. 신설 `view_state.pack_sizes`/`unpack_sizes` + `gui_viewer._scan_overrides`.
-  - ⚠ **왜 그룹(`{크기:[인덱스]}`)이냐**: `_pretty` 가 잎 배열을 한 줄로 유지하므로 다중선택 동기조정으로 **수만 행을 같은 높이로 바꿔도 파일이 안 부푼다**(평면 `{인덱스:크기}` 면 수만 줄). 같은 크기끼리 묶음.
-  - ⚠ **구포맷(v1 배열) 하위호환**: `unpack_sizes` 가 `col_widths` 가 list(`[80,200,...]`)면 위치=인덱스로 흡수(기존 `.viewer` 그대로 읽힘). `SCHEMA_VERSION` 1→2(게이트 아님·정보용).
-  - ⚠ **cache 통일 + Δ 안전**: `col_widths`/`row_heights` 모두 cache 에 `{인덱스:크기}` sparse 저장. `update_table` 은 **범위 내 인덱스만** `resizeSection`(기존 `len==count` 길이가드 제거 → Δ 열 수 불일치도 자연 안전). `clicked_csv_list` 가 전환 시 `_scan_overrides` 로 캡처(행은 `_rows_dirty` 일 때만 → 18만 행 무필요 스캔 회피).
-  - ⚠ **'안 바뀐 것' 기준 = `header.defaultSectionSize()`(하드코딩 80/20 아님)**: `_scan_overrides` 가 미수정 섹션 판정을 **실제 기본섹션크기**와 비교한다. 행 기본높이는 폰트/스타일 최소치로 **클램프돼 20이 아닐 수 있어**(예: 30), 하드코딩 20 과 비교하면 **안 바뀐 행이 전부 '변경됨'으로 잡혀 .viewer 에 모든 행이 저장되던 버그**가 있었다(열은 80 이라 클램프 없어 멀쩡했음 → 행만 터짐). 미수정 섹션은 정의상 `defaultSectionSize()` 를 반환하므로 그 값과 비교하면 클램프와 무관하게 정확. reset 의 행높이 기본복원(`_restore_row_heights`)도 동일하게 `defaultSectionSize()` 사용.
-  - ⚠ **행 좌표 = 보이는(proxy) 행 위치**: 저장/복원 모두 필터 적용 후의 보이는 행 인덱스 기준(`restore_state` → 보이는 행 수 일치 → positional 적용). Memento 행 복원과 동일 원리.
-  - ⚠ 검증: offscreen — pack/unpack(그룹·구배열·빈), 저장→`{"200":[1]}`/`{"45":[2]}`·version 2, 새 창 재로드 복원(열·행), 구포맷 배열 읽기, CSV 전환 cache parity, reset/undo 회귀 모두 PASS. **저장/복원 렌더는 offscreen 미검증 → 실Windows 육안 최종.**
+- **3D 그래프: 각 데이터 포인트에 작은 점 표시**(gui_graph.py `_add_line`): 궤적 선(`line_strip`)과 함께 같은 색 `GLScatterPlotItem`(`POINT_SIZE=3.5`px, 선폭 2.0보다 약간 큼)을 찍는다. ⚠ **이유 = 트랙 데이터가 1개뿐이면 line_strip 이 아무것도 안 그려 아예 안 보임**. 점은 `_line_items`에 같이 넣어 `_clear_lines`가 함께 지움.
 
-- **초기화 재설계: `button_reset`(옛 `button_none`)=전체 분석 초기화(가역) + F5=정상 재오픈 + 행높이 Undo 대상화**: '색만 해제'였던 버튼을 **모든 분석(하이라이트·Δ색·열필터·Δ열·열너비 80·행높이 20)을 초기값으로 되돌리는** `reset_analysis`로 바꿨다. 가역 = `.viewer`/Undo 복원과 **동일 경로**(`_restore_memento(raw)` 적용 후 `record_history` 1회 → Undo 1단계). 색 팔레트(`highlight_colors`)에서 분리하고 `_apply_highlight`의 `color is None` 분기 제거. no-op 가드(이미 raw면 빈 단계 안 쌓음)는 highlights·Δ색·`column_filters`·`columnCount!=src`·열너비≠80·`_rows_dirty`로 판정.
-  - ⚠ **행높이가 Undo 대상이 됐다(기존 '행은 세션 한정' 합의 뒤집음)** — reset의 행높이 초기화를 *가역*으로 만들려면 행높이를 스냅샷에 넣어야 하기 때문(드래그→reset→undo 누수 방지). `Memento`에 4번째 슬라이스 `rows` 추가(`edit_history.py`), 열너비와 **완전 대칭**: `_on_row_resized`가 `_height_timer`(350ms 디바운스)로 `record_history({'rows'})`, `_restore_memento`→`_restore_row_heights` 복원, `_close_ui_overlays`/reset 진입 시 `_flush_size_debounce`로 보류분 확정(드래그=자기 단계, reset=깨끗이 1단계). (이때는 `.viewer` 미저장이었으나 **바로 위 '열/행 크기 저장' 항목에서 열과 동일하게 .viewer/CSV전환 영속화 추가됨**.)
-  - ⚠ **18만 행 비용 회피 = dirty-flag + sentinel**: 행높이를 안 건드리면 `_rows_dirty=False` → `_capture_slice('rows')`가 **None(스캔 0)**, 복원도 None이면 오버라이드 있을 때만 청소. 모델 부착 시 행은 기본 20으로 리셋되므로 `update_table`에서 `_rows_dirty=False`. 좌표는 **보이는(proxy) 행 위치** 기준 — `restore_state`(필터 재적용)로 보이는 행 수를 맞춘 *뒤* positional 적용, 길이 불일치면 미적용(안전).
-  - ⚠ **F5(`reload_current_csv`)는 이제 `_skip_viewer` 없이 정상 재오픈** — cache(히스토리 포함) 폐기 후 재로드 → 해시 일치 시 `.viewer` 자동복원(기존 'F5=raw 강제' 합의 뒤집음). cache 폐기로 새 baseline → **F5 자체는 Undo 비대상(비가역)**. raw 로 가려면 `button_reset`. `_skip_viewer` 머신러리 4곳 통째 삭제(정의·add·discard·`_apply_saved_state` 가드).
-  - ⚠ **개명**: `.ui`/생성 `.py`/아이콘(`button_reset.png`)은 사용자가 먼저 변경, 코드(`gui_viewer`)의 위젯 참조·dict 키·주석 3곳을 맞춰 정합화. 레이아웃상 reset 버튼은 색 팔레트에서 떨어져 undo/redo 좌측에 배치(개명+의미 변경에 맞는 위치).
-  - ⚠ 검증: offscreen 18만 행 e2e — 분석(하이라이트+필터+열너비200+행높이45)→reset→raw(80/20)→**Undo로 행높이45 포함 전부 복원**→Redo→raw, reset no-op(raw), standalone 행드래그 Undo→20, 필터 clear/복원 PASS. **버튼 클릭 체감·렌더는 offscreen 미검증 → 실Windows 육안 최종.**
+- **빌드 그래프 크래시: numpy 2.x `_core` 누락** → 위 "빌드" 섹션에 통합(`collect_submodules('numpy')` + UPX 제외). frozen 그래프 첫 클릭 시 `ModuleNotFoundError: numpy._core._exceptions` 크래시였음.
 
-- **Δ 열 필터 팝업에서 첫 행 안내문구(`r(n)-r(n-1)`) 제외**: Δ 열 우클릭 필터 목록이 첫 보이는 행의 placeholder까지 후보값으로 잡던 것을 빼고 **2번째 (보이는) 행부터** 실제 Δ값만 수집한다. `filter_model.delta_values_excluding_self`에서 `v == _FIRST_LABEL` 스킵 1줄. ⚠ 스냅샷(`_delta_snap`)엔 라벨이 그대로 남아 **표시·값별 색칠·검색은 무영향**(드롭다운 후보에서만 제외) → 첫(기준) 행은 Δ값 필터로 숨길 수 없음(의도된 동작). 첫 행 판정은 인덱스가 아니라 `_FIRST_LABEL` 값으로 — 스냅샷 당시 첫 *보이는* 행이 곧 그 라벨이라 정확. 검증: offscreen(첫행 라벨 제외·실제 Δ값 `{3,0,7}`만·스냅샷 라벨 보존) PASS.
+- **3D 그래프 축 범위 편집칸 + nice-number 눈금 + 축별 독립 정규화** (gui_graph.py): 우측 패널 축마다 `lineEdit_{x,y,z}_{min,max}` 6개. 축 선택 시 데이터 min/max 자동 채움, `editingFinished`에서만 반영(숫자 아님/`min≥max`→직전 값 복원).
+  - ⚠ **축 정규화 = 축별 독립**(등비율 폐기): 각 축을 자기 `[min,max]`→`[0, AXIS_LEN=10]` 큐브로(`_norm_axis`). 카메라는 데이터가 아니라 큐브(0~L)에 프레이밍 → 범위 좁히면 그 구간이 큐브를 채워 확대. **범위 밖 점은 클리핑 안 함**(큐브 밖으로 선이 뻗음).
+  - ⚠ **축 눈금 = nice-number(Heckbert) 라운드 값**: `nice_ticks`/`format_tick_value` 순수함수(offscreen 테스트 가능). 자리수는 step에서 도출, 원점 여백(`ORIGIN_OFFSET_FRAC=0.1`, `_axis_pos`가 단일 좌표 출처). **휠 줌 연동 눈금 세분(딱 2단계)**: `_base_distance` 대비 줌 배율을 `[1,2]`로 클램프해 `_tick_target` 갱신(2배 줌=step 절반, 4·8배는 더 안 세분) → `_retick`(카메라 안 건드림, `_redraw`는 줌 풀리니 금지). 데이터 min 아래 라운드 눈금은 원점 여백 절반(5%)까지만 표시(`nice_ticks(lo=)`).
+  - ⚠ **현재 위치 마커**: `MARKER_SIZE=9`, 깊이검사 끈 GL 옵션(`_ON_TOP_GL`)+`setDepthValue(10)`으로 최상단. 위쪽에 실제 x/y/z 값 라벨(`_TickText`=회전/멀티라인 지원 `GLTextItem` 서브클래스, 눈금 45° 회전·절반 폰트·축별 오프셋).
 
-- **엑셀형 다중선택 동시조정(열너비/행높이) — 드래그 종료 시 일괄 적용**: 완전 선택된 열 N개(또는 행 N개) 중 하나의 경계를 드래그하면, **손을 떼는 순간** 나머지 선택분이 같은 크기로 스냅된다(드래그 *중*엔 잡은 하나만 실시간=Qt 기본). 신설 `_finalize_resize`·`_full_selection_sections`·`_on_row_resized`·`eventFilter` + `_propagating`/`_pending_h`/`_pending_v` 플래그(`gui_viewer`만, `gui_header` 무변경). `_on_section_resized`에 `_pending_h` 캡처+`_propagating` 가드 1줄씩.
-  - ⚠ **행은 세션 한정**(사용자 합의): 행높이 전파는 동작하지만 `.viewer` 저장·Undo/Redo **대상 아님** → cache/Memento/`.viewer` 슬라이스 **신설 안 함**(작업량 대폭 축소). CSV 전환·모델 재부착 시 기본 20으로 리셋됨(per-CSV 행높이 저장 없음). **열은 기존 너비 저장/Undo 그대로** — 전파 후 기존 `_width_timer`가 잠시 뒤 `record_history({'widths'})` 1회로 피어 포함 1단계 기록(추가 코드 0).
-  - ⚠ **release 감지 = 헤더 viewport의 eventFilter + `singleShot(0)`**: QHeaderView엔 'resize 종료' 신호가 없다(`sectionResized`는 드래그 *중* 연속 발생, 끝을 모름). 그래서 *어느 섹션을 어떤 크기로*는 `sectionResized`가 `_pending_h/v`에 캡처하고, *언제*(종료)는 헤더 mouse-release를 eventFilter로 잡아 `singleShot(0)`(헤더 자체 release 처리 직후=최종 크기 확정 후)로 `_finalize_resize` 호출. `_pending_*`가 없으면 no-op라 단순 헤더 클릭/우클릭(필터 팝업)엔 무영향. LeftButton release만.
-    - ⚠⚠ **반드시 `header.viewport()`에 필터를 건다 — `header` 자체에 걸면 release가 안 온다**: QHeaderView는 QAbstractScrollArea라 마우스 이벤트가 헤더 객체가 아니라 그 `viewport()`로 전달된다. `header.installEventFilter`로 걸면 `eventFilter`가 release를 **한 번도 못 받아** 전파가 통째로 죽는다(실제로 이 버그를 겪음 — offscreen 단위테스트가 `eventFilter`를 *직접 호출*해 통과시켜 놓쳤다). 검증은 `QTest.mousePress/Move/Release`로 **실제 이벤트 디스패치**를 태워야 잡힌다(직접 호출 금지). `obj is header.viewport()`로 비교.
-  - ⚠ **`_propagating` 가드 필수**: 전파의 `resizeSection`이 다시 `sectionResized`를 emit → `_on_section_resized`/`_on_row_resized`로 재귀. 이 플래그 ON 구간엔 두 핸들러가 early-return(재귀·재기록·`_pending_*` 덮어쓰기 방지). 기존 `_suppress_width_record`(프로그램적 변경: 모델부착·undo 복원)와 **별개** — 전파는 사용자 제스처라 그쪽으로 억제하면 안 됨(아래 Undo 항목의 예고대로).
-  - ⚠ **18만 행 함정 회피**: "완전 선택된 열/행"은 `selectedColumns()/selectedRows()`(열·행 전체선택 시 수 초) 대신 `selectionModel().selection()`의 **range 직접 분석**(`_full_selection_sections`, `_spans_cover` 재사용 → O(range)). `capture_scope`·`copy_selection`과 동일 철학. 측정: 6만 행 전체선택 판정 **1.6ms**.
-  - ⚠ **대량 행 전파 = `setUpdatesEnabled(False)`로 repaint thrash 차단**: 전 행(수만) 선택 후 높이 조정 시 매 섹션 resizeSection의 repaint가 누적돼 **6만 행 929ms→43ms(~21x)**. 시그널은 안 막아(뷰 레이아웃 일관성 유지) 끝나고 1회만 다시 그림. 180k 추정 ~130ms(1회성, 종료 시점). 전파는 잡은 섹션(idx) 제외 — 그건 드래그가 이미 적용.
-  - ⚠ **전파 조건 = 잡은 섹션이 다중 완전선택의 일원(`len>=2 and idx in sections`)**: 단일/선택 밖 섹션 드래그는 그것만 변경(엑셀 동일). 셀 블록만 선택(헤더 미선택)은 `_spans_cover` 불충족 → 전파 없음(엑셀은 열/행 헤더 전체선택 필요). 검증: offscreen 9케이스(열/행 판정·분리선택·전파·열 Undo 1단계·단일/미포함 no-op·6만 행 안전) + **`QTest` 실 마우스 이벤트 e2e**(헤더 클릭 선택→경계 드래그→release 전파: 열 `[80,130,130,130,80,80]`·행 `[20,20,20]→[45,45,45]`, viewport 버그 회귀 포함). **드래그 체감/스냅 렌더는 실Windows 육안 최종.**
+- **행/열 숨기기 임계(drag threshold) 열·행 분리 + 줌 연동**: 옛 공통 상수(20)를 분수로 — `HIDE_THRESHOLD_COL`=col폭×1/4(100%=20), `HIDE_THRESHOLD_ROW`=row높이×1/2(100%=10). ⚠ 행 기본높이(20)와 임계가 같으면 살짝만 끌어도 접혀, 1/2로 낮춰 최소폭(16)까지 리사이즈 여유.
 
-- **18만 행 열 헤더 선택 렉 제거(가로 헤더 repaint 1,600ms→0.3ms, ~1,300x)**: 열 헤더를 선택하면 그 열 전체(18만 셀)가 선택되는데, 가로 헤더를 다시 그릴 때마다 Qt 기본 `initStyleOptionForIndex`가 섹션 `selectedPosition`(인접 선택 연결선)을 구하려 `QItemSelectionModel.isColumnSelected()`를 호출 → 열이 '전체 선택'이면 true 단축 불가라 **전 행을 순회하며 행마다 프록시 `flags()`(→`mapToSource`)를 18만 번** 부른다(헤더 repaint 1회 ≈ 1.6s). 선택뿐 아니라 **헤더 호버·가로스크롤·포커스마다 재실행**돼 "계속 얼어붙는" 현상이었다. `selectColumn` 자체(선택 저장)는 0.1ms로 무죄. 해법: `gui_header.FilterHeaderView.initStyleOptionForIndex`를 오버라이드(이 메서드는 **virtual**이라 `super().paintSection` 내부 호출에도 반영됨)해, super 가 도는 동안만 프록시 `rowCount`를 0으로 위장(`filter_model._fast_header_paint`)해 그 전행 루프를 빈 루프로 만들고, 선택 상태(`State_On`=Bold 트리거)는 **selection 범위로 O(range) 직접 판정**(`_column_intersects_selection`). `gui_header`(+2 메서드) + `filter_model`(`_fast_header_paint` 플래그 + `rowCount` 가드 1줄).
-  - ⚠ **`setHighlightSections(False)`로는 안 줄어든다** — 이건 선택 강조가 아니라 `selectedPosition`(인접 섹션 연결선) 계산이라서. 그래서 아래 "열 헤더 폰트 스타일" 항목의 *"State_On ≈6µs·행 수 무관"* 기록은 **부정확했음**(열을 실제로 전체 선택한 상태로 측정 안 함 → 정정함). [[measure-before-big-refactor]]
-  - ⚠ **rowCount 0 위장이 안전한 이유**: 가로 헤더 스타일 옵션은 행 수와 무관(섹션 기하는 열 기준) → 렌더 영향 0. 측정상 패치 전후 **헤더 픽셀 diff=0**. 동기·단일스레드 구간이라 try/finally 안에서 set→super→restore, 다른 코드가 그 사이 rowCount를 관측하지 않음. 세로 헤더(행 선택)는 열(3~4개)만 훑어 원래 빠르고 이 오버라이드도 안 타므로 무관.
-  - ⚠ **State_On 직접 판정 = 원본과 동치**: 원본 `State_On`은 Qt `columnIntersectsSelection`(열이 선택과 겹치면 True)이라, 범위 판정(`any(rng.left()<=col<=rng.right())`)과 동일 의미 → Bold 동작 보존(단일셀·열전체·다중열 선택 모두 검증). `selectedPosition=NotAdjacent`로 두어 native 선택 연결선/음영(State_Sunken)은 생략 — 의도된 선택 표시는 Bold라 무방(필요시 '열 완전선택' 여부도 range로 싸게 판정해 State_Sunken 복원 가능).
-  - ⚠ 검증: offscreen 회귀(18만 행 + Δ열 + ⧩필터, 선택열 헤더 repaint 0.33ms·연속 0.31ms/회, State_On 정확, flags/mapToSource 18만→0, 렌더 픽셀 동일) PASS. **Bold 굵기 자체는 offscreen 미렌더 → 실Windows 육안 최종**(기존 헤더 폰트와 동일 한계).
+- **3D 궤적 그래프 창(`button_graph`)**: 현재 CSV의 proxy 데이터로 별도 창에 `GLViewWidget` 3D 궤적. `combo_x/y/z`로 축 선택(**숫자 열만**, 비숫자 disable), 고른 축 수=차원(안 고른 축=0). `bar_time` 슬라이더로 현재 행 마커(노랑) 이동, `combo_track`으로 그룹별 궤적 분리+체크박스/색버튼 목록(gui_filter 재사용).
+  - ⚠ **콜드스타트 보호 = 지연 import**: pyqtgraph/numpy/OpenGL은 무거워 `gui_viewer`가 top에서 import 안 하고 `open_graph` 안에서 지연 import. 검증: `import GUI.gui_viewer` 후 `sys.modules`에 pyqtgraph/numpy 없음.
+  - ⚠ **그래프 창 = 부모 없는 독립 top-level**: 메인 창을 parent로 두면 `GLViewWidget` 첫 OpenGL 컨텍스트 생성 때 부모 네이티브 윈도우까지 재생성돼 메인 창이 깜빡임. → parent 없이 생성, 대신 메인 `closeEvent`에서 `self._graph_window.close()` 명시 호출(안 닫으면 app 미종료).
+  - ⚠ **데이터 출처 = proxy 모델**(`graph_dataset()`): 값 필터(열·Δ)는 적용하되 **행/열 숨기기는 무시**. Δ 첫 행 안내문구만 빈값 예외처리해 숫자 판정 통과. `set_data(headers,rows,title)`로 재오픈마다 갱신(인스턴스 1개 재사용).
+  - ⚠ **숫자 판정 = 빈칸 허용**(비어있지 않은 셀이 전부 float + 숫자 셀≥1). NaN/inf 점은 `np.isfinite` 마스크 제외. **트랙 상한 `MAX_TRACKS=60`** 초과 시 단일 궤적 폴백.
+  - ⚠ **시야 = 선택 축 수에 따라 고정**(`_view_for`): 1·2축 잠금(좌클릭 회전 무시, `graph_area.mouseMoveEvent` 인스턴스 교체), 3축만 자유 회전. 휠 줌은 항상 허용.
+  - ⚠ **빌드 의존성은 위 "빌드" 섹션 참고**(Qt6OpenGL·hiddenimports·numpy nomkl). 옛 spec으로 빌드하면 그래프 실행 시 `Qt6Core.dll` 크래시(`0xc0000409`).
 
-- **취소/다시실행(Ctrl+Z / Ctrl+Y, +Ctrl+Shift+Z, 툴바 `button_undo`/`button_redo`)**: 분석 편집(하이라이트·열필터·Δ·**열너비**)을 **CSV별 독립** 스택에 **액션 단위**로 쌓아 되돌린다(상한 20단계). 스크롤·검색·CSV선택은 대상 아님. 신설 `utils/edit_history.py`(`EditHistory`+`Memento`) + `gui_viewer`(`record_history`·`undo`/`redo`·`_restore_memento`·`_make_memento`·너비 디바운스·`_update_undo_buttons`) + `gui_header`(5개 액션 꼬리에 `record_history` 1줄) + `filter_model.has_delta_colors`(전체해제 no-op 판정).
-  - ⚠ **버튼 활성/비활성 + 아이콘 = `_update_undo_buttons`(can_undo/can_redo) 한 곳**: enabled 와 함께 **전용 아이콘**도 교체(`button_undo/redo.png` ↔ `button_undo/redo_disable.png`). ⚠ 비활성 버튼은 Qt 가 아이콘을 **Disabled 모드로 한 번 더 페이드**하므로, disable 이미지를 `QIcon.addPixmap(pm, Mode.Disabled)`로 그 모드에 직접 등록해 추가 페이드 없이 그림 그대로 보이게 한다(미등록 시 이중으로 흐려짐). 갱신 호출 지점 — 액션 기록 후(record_history: undo 활성+**redo 가지 폐기→비활성**), undo/redo 후, `update_table` 꼬리/빈·실패 분기(CSV 전환·모델없음 반영), `_start_loading`(로딩 중), `_load_folder`·`reload_csv_list` 모델 비울 때. 모델/히스토리 없으면 둘 다 비활성.
-  - ⚠ **셀 단위 기록 안 함 — `.viewer` 직렬화 재사용**: Memento = 3슬라이스(`highlights`=`export_highlights`, `fd`=`export_state`, `widths`=헤더 너비 리스트). 복원은 `.viewer` 자동복원과 **동일 경로**(`restore_highlights`(소스, emit 없음) → `restore_state`(프록시 reset 이 새 하이라이트·열·필터로 보이는 셀 전체 리페인트) → 너비 `resizeSection`). 1→2 순서라 별도 dataChanged emit 불필요. Δ↔필터 상호작용도 통째 복원이라 안 깨짐.
-  - ⚠ **Copy-on-Write**: 액션이 안 바꾼 슬라이스는 직전 Memento의 **객체를 참조 공유**(`_make_memento`가 `changed` 집합에 없는 슬라이스를 prev에서 그대로 가져옴). 필터/너비 액션 20번 해도 highlights 스냅샷은 1개 → 메모리 거의 0. 대량 값별색칠 반복만 그 횟수만큼 누적(상한 20). **Memento 값은 불변 취급**(export=새 객체, restore=read-only) — 절대 제자리 수정 금지.
-  - ⚠ **일괄 액션 = 정확히 1 단계**: `record_history`는 각 사용자 액션 핸들러 **꼬리에서 1회만** 호출(셀/열/행 루프 안 금지). 여러 셀 색칠·값별 수만 행 색칠·전체해제·여러 열 동시 너비조정 모두 1단계. 색칠은 이미 `highlight_cell`/`highlight_rows` 1회 호출이라 자동 충족.
-  - ⚠ **열너비만 연속 신호 → 디바운스(350ms)로 1제스처=1단계**: `sectionResized`는 드래그 중 연속 발생(+향후 '여러 열 동시조정'은 열마다 여러 번) → `_width_timer` 가 묶어 1회 기록. **명시적 너비 기록 시 record_history 가 그 타이머를 stop**(Δ 추가/삭제의 열삽입이 emit하는 sectionResized 와의 중복 단계 방지). CSV 전환 직전 `_close_ui_overlays` 가 보류 중 너비변경을 직전 CSV에 flush('보이는 것=히스토리 top' 유지).
-  - ⚠ **프로그램적 너비변경 억제(`_suppress_width_record`)**: `update_table`(모델부착·기본너비·너비복원)·`_restore_memento`(undo 중 resizeSection)도 `sectionResized` 를 emit → 이 플래그 ON 구간에선 기록 안 함(undo 중 재귀·셋업 중 오기록 방지). **향후 '여러 열 동시조정'의 propagation 은 사용자 제스처라 억제하면 안 됨**(디바운스로 1단계가 되도록 둘 것).
-  - ⚠ **baseline = 모델 최초 표시 직후**(`update_table` 꼬리 `_ensure_baseline_history`, 너비/스크롤 복원 끝난 시점). 캐시 재사용 경로는 history가 이미 있어 skip → 세션 편집 보존. **파일 외부변경/F5/reload 로 cache 엔트리 폐기 시 그 CSV 히스토리도 함께 폐기**(상태 리셋과 일치 — 추가 코드 없음).
-  - ⚠ `selectionModel`은 restore_state의 reset 으로 유지(setModel 아님)라 Δ 비교 핸들러 재연결 불필요. 복원 후 Δ/검색 테두리 마크만 초기화. 검색바 열려있으면 재검색(행 집합 변동 가능).
-  - ⚠ 검증: offscreen 4묶음(EditHistory 단위〔push/undo/redo·redo절단·20상한 정확히 20회〕 · ViewerWindow COW 참조공유〔`is`〕+undo/redo+Δ 열수변동 · 일괄색칠 1단계+CSV별 독립 · no-op 가드) PASS. **너비 디바운스 체감·렌더는 offscreen 미검증 → 실Windows 육안 최종.**
+- **CSV 목록 편집/저장 상태 연필 마커(3색)**: 좌측 목록 항목 우측 끝에 연필(`gui_listmark.EditMarkDelegate`, `super().paint()` 위 overlay). **white**=로드됐고 유효 .viewer 저장본 없음 / **green**=유효 분석 .viewer 불러온/저장 직후 / **yellow**=green 이후 또 바꿈+미저장. 미로드=연필 없음.
+  - ⚠ **판정 = 저장점 Memento 객체 identity**(값 비교 아님): `entry['clean_memento']`와 `hist.current()`를 `is` 비교 → undo로 그 시점 복귀 시 같은 객체라 green. `entry['has_saved']`(유효 분석 저장본 보유)가 green/yellow vs white를 가름. 빈 .viewer는 green 안 침(`_saved_state_has_analysis` 게이트). 줌 등 비기록 동작은 히스토리에 없어 자연 무시.
+  - ⚠ **백그라운드 로드(다른 CSV 보는 중)에서도 green**: `update_table`이 현재 CSV 아니면 early-return → `csv_load_complete` 꼬리 `_mark_after_background_load`가 모델/baseline 없이 `has_saved`만 추정 세팅 후 `_refresh_mark`. **마커 영속 출처 = `self._mark_state` dict**(F5 재구성에도 보존). 아이콘 `GUI/res/image_pencil_*.png`(spec `*.png` 글롭 자동 포함).
 
-- **MSI 설치/제거 '시작 전' 영문 Yes/No 확인창**: 더블클릭/UI 실행 시 작업 전에 `Do you wish to install CSV Viewer?`(설치)·`Do you wish to uninstall CSV Viewer?`(제거)를 띄우고 **No=취소·Yes=진행**. 신설 `installer/confirm_install.vbs`·`confirm_uninstall.vbs`(함수형 VBScript) + `CSVViewer.wxs`에 `Binary`+`CustomAction`(ConfirmInstall/ConfirmUninstall) + `InstallUISequence` `Before="ExecuteAction"` 2줄.
-  - ⚠ **깨끗한 취소 = 함수형 VBScript 반환 2(user-exit)**: 인라인 스크립트(`Script=`/`ScriptSourceFile` — 완료 팝업 방식)는 success/실패만 반환 → No 취소가 '치명적오류'로 뜬다. 반환값으로 취소하려면 **함수 타깃**(`BinaryRef`+`VBScriptCall="함수명"`, Binary 테이블 임베드)이 필수: 함수가 `2`(msiDoActionStatusUserExit)=취소·`1`(success)=진행 반환. MSI 표 검증 type=**4102**(0x1000 64비트스크립트+0x6 VBScript+Binary소스, **Continue비트 0x40 없음**=반환검사) vs 완료 팝업 4198(0x40=Return=ignore).
-  - ⚠ **`Return="check"` 필수**(완료 팝업은 `ignore`): 반환 취소를 반영하려면 check. 부작용 — VBScript 엔진이 죽은 PC에선 확인창 *실패=설치 중단*(완료 팝업은 무시). 이 앱은 이미 VBScript 팝업 의존 + Win11 기본 탑재라 수용(WiX `WIX1163` VBScript deprecated 경고는 신규/기존 4개 CA 공통).
-  - ⚠ **스케줄=`ExecuteAction` 전** → No면 실제 파일/환경변수/레지스트리 변경이 시작되기 전에 중단(아무것도 안 바뀜). 검증 시퀀스: SetREMOVE(999)→CostFinalize(1000)→ConfirmInstall(1298)/ConfirmUninstall(1299)→ExecuteAction(1300)→완료팝업(1301/2). REMOVE가 confirm보다 먼저 세팅돼 조건이 정확.
-  - ⚠ **조건=완료 팝업과 동일**: ConfirmInstall=`NOT Installed AND NOT REMOVE`(신규설치)·ConfirmUninstall=`REMOVE="ALL"`(토글/`/x` 제거). `/qn` 무인설치는 UI 시퀀스를 안 타 확인창 없이 진행(기존 팝업과 동일). 검증: `wix build` PASS + MSI 표(CustomAction/InstallUISequence/Binary) 덤프 확인. **실제 Yes/No 동작은 관리자 실설치 필요 → 실Windows 육안 최종.**
+- **표 확대/축소(Ctrl+휠, 5단계 50~150%)**: 셀크기·글자·마커를 단계별 절대값 배열(`ZOOM_*` 클래스 상수)로 줌. 저장 안 함(항상 100% 시작). 트리거=뷰포트 `eventFilter`의 Wheel+Ctrl.
+  - ⚠ **셀 크기 = '직전 단계 대비 비율'**(엑셀식). 열=각 열 `resizeSection(현재×rc)`, 행=`setDefaultSectionSize`만 바꿔 O(1).
+  - ⚠⚠ **순서 함정 2개**: ① 열 비율 스케일 루프는 `setDefaultSectionSize`보다 **먼저**(뒤면 이중 적용) · ② 마커 절대 두께는 `setDefaultSectionSize` **뒤에**(앞이면 기본값에 덮임).
+  - ⚠ **`MARKER_SIZE_PX`는 줌 연동 property**(고정 상수로 되돌리면 줌 안 따라감). 셀 텍스트 폰트는 모델 `FontRole`(공통 함정 #3). 줌 리사이즈는 `_suppress_width_record` 안 → undo/.viewer 무영향. **줌 전후 스크롤은 비율 유지**(`_scroll_fraction`→`_apply_scroll_fraction`).
 
-- **분석 결과 저장/자동복원(`.viewer`)**: 하이라이트·열필터·Δ·열너비·스크롤을 **CSV 폴더당 1개 `<폴더>\.viewer`(JSON)** 에 Ctrl+S로 저장(현재 CSV 1개)했다가, 다음에 그 CSV를 **처음 열 때 내용 해시(csv_sha256)가 일치하면** 자동 복원. 신설 `utils/view_state.py`(폴더 파일 IO·QColor↔'#rrggbb'·envelope/version 게이트) + 모델 `export/restore` 메서드 + `gui_viewer`(Ctrl+S 바인딩·`_apply_saved_state`·저장 토스트).
-  - ⚠ **proxy/cache 통째 저장 안 함**: 모델 피클은 본문(18만 행) 중복+Qt 버전의존이라 금지. **사용자 입력만** 평면 JSON으로 추출하고 파생(`_accepted`·col_map·Δ값)은 동일 파일에서 재계산. 파일 본문 자체는 저장 안 함(해시로 동일성만 확인).
-  - ⚠ **하이라이트 저장 포맷 = 색→열→행(`{색: {열: [행]}}`), 메모리는 `{(행,열): 색}` 유지**: 보통 행이 열보다 압도적으로 많아 파일엔 열로 묶어 좌표쌍 `[행,열]` 반복을 없앤다(bulk 색칠 ~절반↓). 변환은 `export/restore_highlights`의 O(셀 수) 1회 루프(Ctrl+S·로드 때만 — 핫패스 아님). **⚠ 메모리 `highlight_cells`는 같은 구조로 바꾸지 말 것**: `data()`의 BackgroundRole이 스크롤마다 보이는 셀마다 `get((row,col))` **O(1)**로 색을 찾는 페인트 핫패스라, 색→열→행으로 바꾸면 '이 셀 무슨 색?'에 전 색의 행목록을 뒤져야(`row in [...]`) 18만 행 렌더가 느려진다 — **저장 포맷 ↔ 메모리 구조 분리가 핵심**. `restore_highlights`는 `int(col)`로 받아 in-memory(int 열키)·디스크 JSON(str 열키)·구포맷 `[[행,열],...]`(하위호환) 모두 처리. Δ색은 열 개념이 없어(`{색:[행]}`) 그대로 둠.
-  - ⚠ **Δ는 '행 리스트'가 아니라 '스냅샷 당시 열필터(원인)'만 저장(Option 2)**: snapshot_rows를 다 박으면 무필터 Δ는 `range(N)`=18만 정수(~1.2MB/Δ)라 무식 → 대신 `_delta_snap_filter[base]`(`add_delta_column` 시점의 `column_filters` 복사, 보통 빈 dict)만 저장하고, 복원 때 그 필터를 **같은 파일에 재적용→`_compute_snapshot`로 값 재생**. "필터 걸고 Δ vs 안 걸고 Δ"가 서로 다른 snapshot_filter로 저장돼 각각 정확히 재현. (정렬 기능이 없어 보이는 행=오름차순 → 순서 저장 불필요·멤버십만.) 한계: 스냅샷 당시 *다른 Δ의 값 필터*까지 걸렸던 극히 드문 경우는 열필터만 반영. (`_snapshot`은 `_compute_snapshot(self._accepted)` 위임 — add/restore 단일 로직.)
-  - ⚠ **복원 시점 = 모델 최초 생성 분기에서만**(`update_table` else, 뷰 부착 *전*). 그래야 세션 중 변경이 .viewer로 덮어써지지 않고(캐시 재사용 경로는 재적용 안 함), 하이라이트 `dataChanged` emit도 불필요. **순서: 필터·Δ(`restore_state`) → 하이라이트(`restore_highlights`) → col_widths → 스크롤** — 뒤 둘은 기존 `update_table` 꼬리가 cache의 `col_widths`/`last_view`를 읽어 처리하므로 `_apply_saved_state`가 그 두 키를 cache에 주입한다(Δ 복원 후라야 열 수가 맞아 `len==hdr.count()` 가드 통과).
-  - ⚠ **F5(표 포커스, `reload_current_csv`)는 .viewer를 의도적으로 건너뛴다 = raw 새로고침**: 현재 CSV만 캐시 폐기 후 **자동복원 없이** 다시 로드(사용자 요청). 구현은 `_skip_viewer`(csv명 set) — reload 시 add, `_apply_saved_state` 진입 즉시 그 이름이면 discard+return(1회성). 빈/실패 경로(`update_table`의 무데이터 early-return)에서도 discard해 스테일 마크 방지. **.viewer 파일 자체는 안 건드림**(다시 저장하려면 Ctrl+S). 비-F5 경로(첫 열람·새 창)는 그대로 자동복원. 리스트 포커스 F5(`reload_csv_list`)는 모델을 새로 안 만들어 .viewer와 무관(변경 없음).
-  - ⚠ **해시 비용 0**: loader가 로드 성공 시 이미 계산한 `content_hash` 재활용(저장=박기, 복원=비교)이라 GUI 스레드 재해싱 없음. `content_hash`는 status=='ok'에서만 생겨 '분석 있는 경우'와 일치.
-  - ⚠ **저장은 read-modify-write 머지**(`save_file_state`가 .viewer를 다시 읽어 현재 CSV 항목만 교체→원자적 재기록) → 다른 CSV 저장본 보존. col_widths/scroll은 cache가 'CSV 전환 시'에만 갱신되므로 **저장 시점엔 뷰에서 직접 캡처**. 깨진/구버전 .viewer는 envelope·version 게이트 + 복원 `try/except`로 조용히 무시(**CSV 열람 절대 안 막음**). `.viewer`/`.viewer-*.tmp`는 `.csv`로 안 끝나 목록·F5에서 제외. 다중 프로세스 동시편집은 사용자 합의로 배제(머지·원자적 쓰기로 부분 안전).
-  - ⚠ **JSON 포맷 = 커스텀 `_pretty`**(구조는 들여쓰고 *잎 배열은 한 줄*): `json.dump(indent=2)`로 바꾸지 말 것 — 잎 배열이 원소당 한 줄로 터져 가독성↓ + 값별 행 색칠(수만 행)이 파일을 수십 배로 부풀린다. 규칙: dict와 '원소가 dict인 목록(column_filters/deltas)'만 줄바꿈, 스칼라 리스트(highlights의 행목록·hidden·col_widths·scroll)는 compact 한 줄. ⚠ **dict 키는 `json.dumps(str(k))`로 직접 문자열화** — highlights 새 포맷의 '열' 키가 int라, 표준 `json.dump`(자동)와 달리 커스텀 프린터는 수동 변환해야 유효 JSON 키(`"5":`)가 된다(안 그러면 `5:`로 깨짐). 표준 JSON이라 `json.load` 그대로 읽힘.
-  - ⚠ 검증: offscreen 유닛 7(필터+하이라이트 라운드트립〔색→열→행 포맷·구포맷 하위호환·int/str 열키·범위밖 무시·폴더왕복〕·Option2 Δ→필터·필터→Δ·Δ색/Δ필터·파일머지·깨진파일·JSON 전과정) + 통합 3(로드→분석→Ctrl+S 기록·새 창 자동복원·해시불일치 차단) PASS. **저장 토스트/하이라이트 *렌더*는 offscreen 미검증 → 실Windows 육안 최종.**
+- **MSI 설치 상태별 3분기(설치/업그레이드/제거토글)** → 위 "배포" 섹션에 통합. 핵심: ProductCode를 버전별 결정 GUID로 만들어 옛 버전 위 실행 시 업그레이드, 같은 버전 재실행 시 제거토글. 확인창 3종이 조건으로 정확히 하나만 뜸.
 
-- **전체검색 시작 위치 = 내 현재 위치(앵커)부터**: Ctrl+F 전체검색이 항상 1/N부터 시작하던 것을, 일반 에디터처럼 **내 위치 이상인 첫 매치(예: 103/200)부터** 시작하도록(`search_model.search`의 `current_index=0`을 분기). **범위검색은 그대로 1/N**, 전체검색만 `bisect_left(matches, anchor)`. **앵커 = 마지막 선택(현재) 셀이 유효하면 그 (행,열), 없으면 화면 최상단 보이는 행(열=0)** (`_anchor_rowcol`; 사용자 합의 — *가시성 체크 없이 선택 셀 우선*). `matches`가 (row,col) 오름차순이라 **튜플 비교가 곧 '행 우선·열 다음'** → bisect O(log N), 헤더 매치(-1,*)는 앵커행(≥0)보다 작아 자동 제외. 앵커 **'이상(>=)'**이라 자기 셀이 매치면 포함(같은 검색어 Enter 재검색은 idempotent, 전진은 F3 — 기존 Enter=재검색/F3=다음 동작 유지). 매치를 다 지나쳤으면 1번으로 wrap. ⚠ 느린 `selectedRows()/selectedColumns()` 안 쓰고 `currentIndex()`+`rowAt(0)` O(1)만(CLAUDE.md 선택 API 함정 회피). 검증: offscreen 6케이스(선택셀 시작·열우선·끝에서 wrap·범위검색 무시·무선택 fallback·앵커값) PASS. `search_model.py`만 변경.
+- **행/열 숨기기(엑셀식)**: 값 필터와 직교하는 '위치 기반' 상태(`hidden_rows`/`hidden_cols`, 소스 좌표). 숨긴 연속 구간마다 마커 섹션 1개(열=`⋯`, 행=`︙`, 18px) 합성. 트리거=섹션 경계를 시작 끝 너머로 드래그(음수 너비), 펼침=마커 더블클릭.
+  - ⚠ **트리거 = 마우스 geometry**(Qt `sectionResized`는 `minimumSectionSize`로 클램프돼 음수 안 줌) → press 때 그립 잡고 release 때 `마우스−섹션시작끝 ≤ 임계`면 숨김. **반드시 헤더 `viewport()`에 eventFilter**(공통 함정 #4).
+  - ⚠ **모델 reset은 섹션 크기를 '위치(proxy 인덱스) 기준'으로 보존** → 열 수 변동 시 숨긴 자리 크기를 밀려든 섹션이 물려받는 '전염' 버그. 해결: 숨김/펼침 시 **소스 기준 캡처·복원**. 열=`_col_width_map` 전수, 행=18만 전수 불가라 `_capture_row_layout`이 reset 전 비기본 위치 기억→reset 후 청소+소스 기준 재적용.
+  - ⚠ **마커 = Fixed 리사이즈 모드**(사용자 드래그 방지). 리사이즈 모드도 reset 시 위치 누수 → 글로벌 `setSectionResizeMode(Interactive)`로 되돌린 뒤 현재 마커만 Fixed. Fixed는 프로그램적 `resizeSection`은 못 막아 다중선택 전파가 마커를 늘리던 엣지 → `_full_selection_sections`가 마커 위치 차집합 제외.
+  - ⚠ **펼침 = 열·행 모두 원래 크기 복원**(숨길 때 press 시점 `pre_size`를 `hidden_*_sizes`에 보관, .viewer 저장). **필터∧숨김 직교**: 보임=필터통과∧비숨김. **Δ는 소스 따라감**(base 숨기면 Δ도 숨김, Δ 자체 드래그-숨김은 무시). 검색/복사는 마커 열(`source_columns()`=-1)·마커 행(`accepted<0`) 스킵.
 
-- **검색 현재 셀 회색 테두리**: Ctrl+F로 매치를 하나씩 이동(next/prev)할 때 현재 매치 셀에 **회색 2px 테두리**(기존 scrollTo/선택 이동에 +α). 기존 `CompareBorderDelegate`(Δ 비교 파랑/빨강 테두리, 테이블에 1개만 깔림)에 **검색 마크 추가**(`_search`·`set_search_mark`·`GRAY` 상수, `_draw_border` 헬퍼로 공통화) — 새 델리게이트 안 만들고 재사용(Δ와 독립; 같은 셀이면 회색이 위). 좌표는 Δ와 동일 프록시 (row,col). **델리게이트 set/clear는 GUI 레이어에서**: `search_model`(utils)이 델리게이트를 안 만지도록, 위치변경마다 이미 호출되는 `search_gui_update` 슬롯에서 `_update_search_mark`로 갱신. 해제 3곳 — 빈 검색·검색바 닫기(`search_gui_hide`)·CSV 전환(`_wire_selection_signals`, 모델 교체). **유지 정책(사용자 합의)**: *다음 이동/검색바 닫기까지 유지*(수동 클릭으론 안 사라짐 → selectionChanged 훅 불필요). ⚠ 헤더 매치(행 -1)는 기존대로 열 전체 선택만, 셀 테두리 없음(델리게이트는 데이터 셀만 paint → `_update_search_mark`가 행<0이면 None). 성능: paint당 튜플 비교 1회 + 이동당 `viewport().update()` 1회 → 행 수 무관(Δ와 동일). ⚠ **회색 렌더는 offscreen 미검증(Δ 테두리와 같은 사유) → 실Windows 육안 최종**; 마크 *로직*은 offscreen 7케이스(첫매치·next·prev·헤더제외·빈검색/닫기/CSV전환 해제) PASS. 색/두께는 `GRAY` 상수 한 곳.
+- **폴더 버튼 = 폴더 선택창 → 탐색기 열기**: `button_csv_folder` 클릭 시 `edit_csv_path`(상위 경로)를 `os.startfile`로 탐색기에. 경로 비었거나 없으면 `_app_dir()`(frozen=exe 디렉터리, 개발=argv[0] 디렉터리).
+  - ⚠ **`open_csv_folder`(선택창)는 유지** — 빈 창 시작·`edit_csv_path` 텍스트 클릭이 사용. 폴더 변경 수단=(a)경로 텍스트 클릭=선택창 (b)드래그&드롭, **버튼만** 탐색기로. 여는 건 **상위 경로**(형제 CSV 폴더 보임).
 
-- **CSV 재진입 시 파일 변경 감지 → 캐시 무효화**: 다른 CSV 보다 돌아올 때, 캐시 존재 여부만 보던 것을 디스크 파일과 비교해 바뀌었으면 그 CSV 캐시를 폐기·재로드하도록 변경(`clicked_csv_list`에 `_cache_is_fresh` 게이트 추가). **방식 = stat 게이트 + 해시 타이브레이커**(사용자 합의): ① `stat`(size+mtime_ns) 같으면 신선 — 해시 안 함(절대다수 경로, **≈7µs·파일 크기 무관**) · ② size 다르면 내용 변경 확정이라 해시 생략하고 폐기 · ③ **size 같고 mtime만 다를 때만** 내용 `sha256` 비교(touch/동일 재저장이면 캐시 유지+`signature` 갱신, 다르면 폐기). ⚠ **왜 전체해시를 기본으로 안 쓰나**: 이 검사는 *재진입마다 GUI 스레드에서 동기로* 치르는데, 105MB 실측 전체해시 warm 41~130ms(cold 수백ms~초)라 매 탭전환 끊김+예산(0.1~0.3s) 위태 → `os.stat`(0.007ms)이 1만 배 싸고 외부 재생성은 mtime/size로 100% 잡힘. 지문 저장: 로더 스레드가 `signature`(stat, 성공/빈/실패 공통)+`content_hash`(sha256, **성공 시에만**)를 계산해 `t.signature/t.content_hash`로 노출 → 완료 콜백이 cache에 저장(`'signature'`,`'content_hash'` 키 신설). ⚠ **변경 감지 시 그 CSV의 뷰 상태(필터·하이라이트·Δ열·스크롤·열너비) 전부 초기화**(내용이 달라지면 값 기준 필터/Δ가 무의미 — 사용자 합의). ⚠ 미세 TOCTOU(로더 emit~콜백 사이 재변경)는 이 앱 시나리오상 사실상 0; 완전 무경합 원하면 로더 `os.fstat(열린 핸들)`로 전환 가능. ⚠ F5(`reload_csv_list`)는 기존대로 추가/삭제만 동기화(변경 자동무효화는 범위 밖). 검증: offscreen 9개(판정 로직)+3개(비동기 전 과정: 최초 지문 기록·미변경 캐시 유지·외부 변경 자동 재로드) 모두 PASS.
+- **필터 팝업 Apply/Close 가려짐 해결**: 창 최소높이를 매직 상수(`scrollbox+120`)→`self.layout().minimumSize().height()` 실측으로. ⚠ 명시적 `minimumHeight`가 layout 최소보다 작으면 그 작은 값이 우선(자동 floor 아님) → 반드시 실측값 이상. `.ui`의 `setMinimumSize`도 코드에서 덮어야 함. max는 `create_items`의 400.
 
-- **ESC 연타 닫기 간격 상수화(0.5초)**: `ViewerWindow.ESC_INTERVAL_SEC=0.5`(초)로 1초→0.5초 단축·매크로화. ⚠ **연타 유효 간격과 ESC 안내 토스트 노출 시간을 의도적으로 같은 상수에 묶음**(토스트=`int(상수×1000)`ms, `show_esc_message`). 둘을 독립값으로 '정리'하지 말 것 — 안내가 떠 있는 동안 = 재입력 유효 시간이라는 UX 의도.
+- **열/행 크기 저장 = sparse 그룹 포맷 + 행높이 영속(열과 parity)**: `.viewer`의 `col_widths`를 전체 배열→`{크기:[인덱스]}` 그룹, `row_heights` 신설. 인메모리는 `{인덱스:크기}` sparse. `view_state.pack_sizes`/`unpack_sizes`.
+  - ⚠ **그룹 포맷 이유**: 다중선택 동기조정으로 수만 행 같은 높이 바꿔도 파일 안 부풂. 구포맷(v1 배열) 하위호환(list면 위치=인덱스).
+  - ⚠ **'안 바뀐 것' 기준 = `header.defaultSectionSize()`**(하드코딩 80/20 아님): 행 기본높이는 폰트/스타일 최소치로 클램프돼 20이 아닐 수 있어, 하드코딩 20과 비교하면 안 바뀐 행이 전부 '변경됨'으로 잡혀 모든 행 저장되던 버그(열은 80이라 멀쩡). reset도 `defaultSectionSize()` 사용.
 
-- **열 너비 per-CSV 저장/복원**: CSV 전환 시 열 너비가 기본값(80)으로 리셋되던 문제 해결. 원인은 너비가 **단일 공유 헤더에만** 살아있고 per-CSV 저장이 없던 것(신규/리로드 로드의 `setModel(None)`이 매번 기본값으로 리셋 — 측정 확인; 직접 swap은 sticky하나 CSV별이 아니라 무의미). 해결: `last_view`(스크롤 위치)와 **동일 패턴**으로 cache에 `col_widths` 키 추가 — 떠날 때 `clicked_csv_list`에서 `[sectionSize(c)...]` 캡처, 들어올 때 `update_table`에서 `resizeSection` 복원. **proxy model이 아니라 cache에 저장**(너비는 뷰 기하 → 데이터 프록시에 두면 레이어 위반; cache는 이미 last_view를 담는 per-CSV 뷰상태 저장소). ⚠ 복원은 **가로 스크롤(last_view)보다 먼저** 적용(너비가 스크롤 범위를 바꿔 클램프 방지). ⚠ `len(col_widths)==header.count()` 가드 = Δ 열 안전장치(불일치 시 기본값 유지). O(열 수)라 행 수 무관(18만 행 함정 없음). 검증: offscreen 통합테스트로 복원·열수 상이(6↔8)·무bleed·Δ열(6→7) 모두 PASS. 세션 한정(프로세스 독립·무상태라 런치 간 영속화는 범위 밖).
+- **초기화 재설계: `button_reset`=전체 분석 초기화(가역) + F5=정상 재오픈**: reset은 모든 분석을 초기값(하이라이트·Δ·필터 없음·열너비80·행높이20)으로. 가역=`_restore_memento(raw)` + `record_history` 1회(Undo 1단계). no-op 가드로 이미 raw면 빈 단계 안 쌓음.
+  - ⚠ **행높이가 Undo/.viewer 대상**(reset 가역화 위해). `Memento` 4번째 슬라이스 `rows`, 열너비와 대칭. **18만 행 비용 회피 = dirty-flag(`_rows_dirty`) + sentinel**(안 건드리면 캡처 None). 좌표=보이는(proxy) 행 위치.
+  - ⚠ **F5(`reload_current_csv`)=정상 재오픈**(cache 폐기 후 재로드 → 해시 일치 시 .viewer 자동복원). cache 폐기로 새 baseline → F5 자체는 Undo 비대상. raw로 가려면 `button_reset`.
 
-- **Δ 셀 선택 시 비교셀 테두리 + hover 툴팁 + 문자 비교 `=`/`≠`**: Δ 셀(첫 행 제외) 선택 시 그 차이가 비교한 두 부모셀에 테두리(현재 R(n)=파랑, 이전 R(n-1)=빨강) — `gui_delegate.CompareBorderDelegate`가 `super().paint()` 위에 overlay(색·두께는 delegate 상수, 사용자가 직접 조정). **'이전 행'은 *스냅샷 시점의 이전 보이는 행*** (`_snapshot`이 `_delta_prev[base][sr]=prev_sr`를 동시 저장)이라 화면상 윗행과 다를 수 있고, 그 행이 **필터로 숨겨졌으면 빨강 생략**(`delta_compare_cells`가 `prev_prow=None` 반환 → 파랑만). 선택 변경(`currentChanged`+`selectionChanged`)마다 좌표 재계산→마크 갱신(바뀔 때만 `viewport().update()`); selectionModel은 setModel마다 새로 생기므로 `_wire_selection_signals`(update_table)로 (재)연결+이전 마크 정리. **툴팁**(`ToolTipRole`): 두 행번호+값+관계 표시 — `ToolTipRole`은 *hover 시 그 셀 1개만* 조회(페인트/스크롤과 무관)라 18만 행에도 **무비용**. **포맷 정정**: `_format_delta`의 비숫자(문자) 결과를 `—`→`=`/`≠`로 변경(표시·툴팁이 이 한 곳을 따라감).
+- **Δ 열 필터 팝업에서 첫 행 안내문구(`r(n)-r(n-1)`) 제외**: 후보값을 2번째 보이는 행부터 수집(`delta_values_excluding_self`에서 `v == _FIRST_LABEL` 스킵). ⚠ 스냅샷엔 라벨이 남아 표시·색칠·검색 무영향(드롭다운 후보에서만 제외) → 첫 행은 Δ값 필터로 못 숨김(의도된 동작).
 
-- **Δ 셀 색칠 + Δ 열 음영**: ① Δ 셀은 소스 셀이 없어(=`mapToSource` 무효) 색을 프록시 `_delta_color={base:{source_row:QColor}}`에 별도 저장하고, `data()`의 `BackgroundRole`이 *사용자 색 > 첫 행 `R(n)-R(n-1)` 옅은 회색(236) > 없음* 순으로 반환. **세 경로 모두 지원**: 선택+색(`gui_viewer._apply_highlight`가 선택 셀을 실제 셀↔Δ 셀로 분리해 Δ는 `set_delta_cell_colors`로 라우팅), 필터창 값별 색(`gui_header.paint_value`가 `color_delta_rows` 추가 호출), `button_none`=전체 해제(`clear_all_delta_colors`, 소스 전체해제와 짝). `_emit_delta_bg`는 변경된 Δ 열의 전 행을 1회 `dataChanged`(뷰는 보이는 셀만 다시 그림 → 행 수 무관). 첫칸 문구는 `_FIRST_LABEL` 한 곳에서 참조. ② Δ 열 **헤더** 배경은 `gui_header.paintSection`에서 `fillRect(223)`로 약간 어둡게 직접 그림(super 는 스타일시트 240으로 덮으므로 Δ 열만 분기해 수동 렌더; 텍스트는 좌측·수직중앙 동일).
+- **엑셀형 다중선택 동시조정(열너비/행높이)**: 완전 선택 N개 중 하나 드래그→손 뗄 때 나머지 스냅. `_finalize_resize`·`_full_selection_sections`·`_propagating` 플래그.
+  - ⚠ **release 감지 = 헤더 viewport eventFilter + `singleShot(0)`**(QHeaderView엔 resize 종료 신호 없음, `sectionResized`는 드래그 중 연속). *어느 섹션을 어떤 크기로*는 `_pending_h/v` 캡처, *언제*는 mouse-release. **viewport에 걸 것**(공통 함정 #4).
+  - ⚠ **`_propagating` 가드 필수**(전파의 resizeSection이 다시 sectionResized emit→재귀). 기존 `_suppress_width_record`(프로그램적 변경 억제)와 **별개** — 전파는 사용자 제스처라 그쪽으로 억제 금지. **대량 행 전파 = `setUpdatesEnabled(False)`**(6만 행 929ms→43ms). 완전선택 판정은 range 분석(공통 함정 #1). 열은 디바운스 너비기록으로 1단계 Undo.
 
-- **열 헤더 폰트 스타일(선택/필터 열 → Bold, Δ 열 → Italic)**: `gui_header.FilterHeaderView.paintSection`에서 상태에 맞는 폰트만 painter에 주입하고 `super().paintSection()`에 위임한다 — 배경·테두리·정렬·말줄임 등 렌더는 native 그대로, `QHeaderView::section` 스타일시트도 **유지**(측정상 주입한 painter 폰트가 super를 거쳐 텍스트까지 도달하므로 배경/말줄임 재구현·스타일시트 제거 불필요). 판정: 선택=`initStyleOptionForIndex`의 `State_On`(필터/델타로 모델이 reset/insert돼도 신뢰 가능), 필터=`src in column_filters`(Δ열은 `has_delta_filter`), Δ=`is_delta_column`.
-  - ⚠ **진짜 원인 = `highlightSections`**: 커스텀 헤더는 bare QHeaderView 기본값 `False`라 선택해도 `State_On`이 안 떠 *가로 헤더만* 안 굵어졌다(세로 헤더는 QTableView가 자동으로 True → 사용자가 본 비대칭의 원인). `__init__`에서 `setHighlightSections(True)`로 해결. 켜도 선택 추적은 구간 기반이라 행 수 무관.
-  - ⚠ **정정**: QHeaderView는 헤더 `FontRole`을 *아예 안 읽는다*(스타일시트 유무 무관 — 측정 확인). 따라서 헤더 폰트는 FontRole이 아니라 paintSection으로만 가능. (Δ '셀' italic은 delegate 경로라 FontRole로 정상 — 별개 경로.)
-  - ⚠ 성능 **정정**: 과거 "보이는 섹션당 `State_On` 조회 ≈6µs·행 수 무관"이라 적었으나 **틀렸다** — 열을 *실제로 전체 선택*한 상태에서 측정하지 않은 탓. `paintSection`이 부르는 `initStyleOptionForIndex`는 Qt 기본 구현에서 `isColumnSelected()`로 **전 행을 스캔**해(18만 행 열 선택 시 헤더 repaint ≈1.6s) 심각한 렉을 유발했다. → 변경 이력 맨 위 "18만 행 열 헤더 선택 렉 제거"에서 `initStyleOptionForIndex` 오버라이드로 해결(이제 행 수 무관 ~0.3ms). 검증: offscreen은 굵기 미렌더 → 실Windows 육안 최종.
+- **18만 행 열 헤더 선택 렉 제거(헤더 repaint 1,600ms→0.3ms)**: 열 헤더 선택 시 그 열 전체 선택 → Qt 기본 `initStyleOptionForIndex`가 `selectedPosition` 계산하려 `isColumnSelected()`→전 행 순회(헤더 호버·스크롤·포커스마다 재실행). 해결: `FilterHeaderView.initStyleOptionForIndex` 오버라이드(virtual이라 super().paintSection에도 반영)해 super 도는 동안만 프록시 `rowCount`를 0 위장(`filter_model._fast_header_paint`), 선택 상태(`State_On`)는 selection range로 O(range) 직접 판정(`_column_intersects_selection`).
+  - ⚠ **`setHighlightSections(False)`로는 안 줄어든다**(이건 선택 강조가 아니라 인접 섹션 연결선 계산이라서). rowCount 0 위장은 가로 헤더 기하가 행 무관이라 픽셀 diff=0, 동기 구간이라 안전. State_On 직접 판정은 Qt `columnIntersectsSelection`과 동치(Bold 보존).
 
-- **`FilterHeaderView` 모듈 분리(`GUI/gui_header.py` 신설)**: 테이블 가로 헤더(`FilterHeaderView`)는 우클릭 필터 팝업창(`FilterWidget`)과 **별개 개념**이라 `gui_filter.py`에서 떼어 `GUI/gui_header.py`로 옮겼다. 의존은 **단방향**(`gui_header`가 `gui_filter.FilterWidget`을 import, 역방향 없음 → 순환 없음). `gui_viewer`의 import 1줄만 `gui_header`로 변경. **`utils/`가 아니라 `GUI/`에 둔 이유**: `utils/`는 비시각 모델/스레드 전용(QWidget 없음)이고 `FilterHeaderView`는 `QHeaderView`(시각 위젯)이라 `gui_*` 컨벤션을 따른다. 동작/로직 변경 없음(순수 이동).
+- **열 헤더 폰트 스타일(선택/필터→Bold, Δ→Italic)**: `FilterHeaderView.paintSection`에서 상태별 폰트만 painter에 주입하고 `super().paintSection()` 위임(배경·말줄임·스타일시트 유지). 판정: 선택=`State_On`, 필터=`src in column_filters`(Δ는 `has_delta_filter`), Δ=`is_delta_column`.
+  - ⚠ **진짜 원인 = `highlightSections`**: 커스텀 헤더는 기본 `False`라 가로 헤더만 안 굵어짐(세로는 QTableView가 자동 True) → `setHighlightSections(True)`. **QHeaderView는 헤더 FontRole을 안 읽음** → 헤더 폰트는 paintSection으로만(공통 함정 #3). 굵기는 offscreen 미렌더.
 
-- **복사(`copy_selection`) 대용량 성능**: 전 열/행 복사가 18만 행에서 수 초 멈추던 문제 해결(`selectedColumns()`/`selectedRows()`≈3.6s + `selectedIndexes()` 18만 개 생성 + 셀별 `data()` 호출이 원인). 이제 `selectionModel().selection()`의 **range만** 보고(헤더행/행번호열 포함 여부는 `_spans_cover` 구간 커버리지로), 셀 값은 **소스 `rows` + Δ 스냅샷을 직접** 읽는다(프록시 `accepted_rows()`로 proxy→source 행 벌크 매핑, `source_columns()`로 열 변환, Δ 열은 `delta_snapshot()`). 분리/희소 선택은 열별 병합 구간 + `bisect`로 (row,col) 선택 판정. **측정: 10만 행 열 복사 ≈ 0.04s.** (검색의 `capture_scope`와 동일 철학.)
+- **`FilterHeaderView` 모듈 분리(`GUI/gui_header.py`)**: 가로 헤더는 필터 팝업(`FilterWidget`)과 별개라 분리. 의존 단방향(`gui_header`→`gui_filter.FilterWidget`). **`utils/`가 아니라 `GUI/`에 둔 이유**: `utils/`는 비시각 모델/스레드 전용(QWidget 없음), `FilterHeaderView`는 시각 위젯. 순수 이동(로직 무변경).
 
-- **Δ(행간 차이) 가상 열**: 열 헤더 우클릭 필터창의 `☰🡫Δ` 버튼(`button_row_delta`, .ui에 이미 존재) → 그 열 바로 오른쪽에 `Δ [원본헤더]` 가상 열 추가. 각 행 = (그 행 값)−(윗행 값), 첫 행 `R(n)-R(n-1)`, 비숫자(문자)는 `=`/`≠`. 흐름: `gui_header.contextMenuEvent`(클릭 열→`source_column_of`로 소스 열 변환) → `filter_model.add_delta_column/remove_delta_column`.
-  - ⚠ **스냅샷(고정)**: `add_delta_column` 시점의 *보이는 행 순서*로 1회 계산해 `_delta_snap[base]={source_row:문자열}`에 저장(`_snapshot`). 이후 필터가 바뀌어도 **재계산 안 함** → 스냅샷 때 숨겨졌던 행은 키가 없어 필터를 풀어도 빈칸, 계산됐던 행은 값 유지. (동적 재계산 아님 — 사용자 합의.) 포맷은 `_format_delta` **한 곳**(추후 '동일/변경' 텍스트로 교체 시 여기만).
-  - ⚠ **열 간접화(col_map)**: 프록시가 가정하던 '프록시 열==소스 열'을 깼다. `_col_kind/_col_src/_src_to_pcol`로 프록시↔소스 열 매핑. **`column_filters`·`setFilterForColumn`·`column_values_excluding_self`·`source_rows_with_value`는 전부 소스 열 키**(이미 `row[col]` 인덱싱). 헤더뷰가 클릭 열을 `source_column_of`로 1회 변환해 넘긴다. Δ 열은 `mapToSource` 무효.
-  - ⚠ **성능**: 추가 = `beginInsertColumns` 1회 + col_map(열 수만큼) 재구성. 뷰는 보이는 셀만 다시 그려 행 수와 무관하게 즉시. 원본 모델에 실제 열 삽입은 금지(18만 행 `row.insert` 프리즈 + 필터/하이라이트 키 재색인 + 커스텀 프록시가 columnsInserted 자동전달 안 함).
-  - ⚠ **Δ 열에서 깨지던 곳 동반 수정**: `search_model.search`는 소스 행을 `row[proxy_col]`로 직접 읽어 Δ 열에서 IndexError → `proxy.source_columns()`로 변환·Δ 열 스킵(검색 제외). `copy_selection` 헤더는 `model.column_label(c)`(⧩ 없음, Δ[..] 포함). `_apply_highlight`는 무효(Δ) 소스 인덱스 스킵.
-  - ⚠ 버튼 상태(우클릭 열 따라): 일반 열=추가 / 이미 Δ 보유한 원본 열=비활성 / Δ 열=삭제. 추가는 원본 열에서 1회, 제거는 Δ 열에서. 버튼은 **텍스트 대신 아이콘**(`GUI/res/button_row_delta.png`=추가, `button_row_delta_delete.png`=삭제)을 `setIcon`으로 표시 — popup이 매번 새 인스턴스라 `contextMenuEvent`에서 그때 `setText("")`+`setIcon`(+연결)을 설정. 아이콘 경로는 `self.parent.icon_path`(ViewerWindow 주입).
-  - ⚠ **Δ 셀 italic**: `data()`가 Δ 열 `FontRole`에 `_italic_font`(italic) 반환(셀은 delegate가 FontRole을 honor). 헤더 italic은 FontRole이 아니라 `gui_header.paintSection`이 담당(QHeaderView는 헤더 FontRole을 안 읽음 — 변경 이력 "열 헤더 폰트 스타일" 참고).
-  - ⚠ **Δ 열 필터는 원본 값이 아니라 Δ값(스냅샷) 기준**: 별도 `delta_filters`(base 열 키, `column_filters`와 분리) + `_rebuild`가 `_delta_snap` 조회로 AND 판정. API: `delta_values_excluding_self`(캐스케이딩 후보값)·`setDeltaFilterForColumn`·`has_delta_filter`·`source_rows_with_delta_value`(Δ값 색칠). 헤더뷰는 `is_delta`로 apply/clear/paint/값목록 경로를 분기. Δ값 필터 걸리면 Δ 헤더에도 `⧩`. `_row_passes(i, exclude_src, exclude_delta)`는 인덱스 기반(두 필터 모두). Δ 열 삭제 시 그 Δ필터도 해제(숨기던 행 복원 위해 reset).
+- **복사(`copy_selection`) 대용량**: 전 열/행 복사가 18만 행에서 수 초 멈추던 것 → `selection()` range만 보고(`_spans_cover`), 셀 값은 소스 `rows`+Δ 스냅샷 직접 읽기(`accepted_rows()` 벌크 매핑·`source_columns()`·`delta_snapshot()`). 측정 10만 행 ≈0.04s. (공통 함정 #1)
 
-- **필터창 값별 행 색칠**: 열 헤더 우클릭 필터창의 각 값 항목 우측 색버튼 → 그 값을 가진 모든 행을 색칠. 흐름: `gui_filter._FilterItemRow`/`FilterWidget.color_picked` → `FilterHeaderView.paint_value` → `filter_model.source_rows_with_value`(선택 시점 lazy 1회 O(N) 스캔) → `table_model.highlight_rows`.
-  - ⚠ 색칠은 별도 row-color 레이어 없이 **기존 `highlight_cells`(셀 단위)에 직접 기록**(수동 셀 색칠과 동일 저장소). 이후 일부 셀만 다른 색으로 덮어쓰기가 자연스러움(우선순위 충돌 회피). 대신 한 값이 수만 행이면 셀 수만큼 메모리 증가. `highlight_rows`는 셀별 `QModelIndex` 생성 없이 좌표로 기록 후 bounding box 한 번만 `dataChanged`.
-  - ⚠ 색버튼은 `QHBoxLayout`에 넣지 않고 **줄 우측 오버레이**(`_FilterItemRow.resizeEvent`)로 띄우고 체크박스 폭은 `QSizePolicy.Ignored`. 안 그러면 긴 텍스트가 줄 폭을 늘려 버튼이 화면 밖으로 밀리고 가로 스크롤이 생긴다(텍스트는 버튼 아래로 깔림).
-  - ⚠ `QColorDialog` 띄우는 동안 팝업 자동닫힘 방지: `FilterWidget._dialog_open` 가드로 eventFilter의 '바깥 클릭=닫힘'을 막음. 닫힌 뒤 `activateWindow()/raise_()/setFocus()`로 팝업 포커스 복원(안 하면 비활성 팔레트라 체크박스가 전부 해제된 듯 회색으로 보임).
+- **Δ(행간 차이) 가상 열**: 필터창 `☰🡫Δ` 버튼 → 그 열 오른쪽에 `Δ [헤더]` 가상 열. 각 행=(그 행)−(윗행), 첫 행=`R(n)-R(n-1)`, 비숫자=`=`/`≠`. `add_delta_column/remove_delta_column`.
+  - ⚠ **스냅샷(고정)**: `add_delta_column` 시점의 보이는 행 순서로 1회 계산(`_delta_snap[base]={source_row:문자열}`). 이후 필터 바뀌어도 재계산 안 함(숨겨졌던 행은 키 없어 빈칸). 포맷은 `_format_delta` 한 곳.
+  - ⚠ **열 간접화(col_map)**: '프록시 열==소스 열' 가정을 깸. `_col_kind/_col_src/_src_to_pcol`로 매핑. `column_filters`·`setFilterForColumn`·`column_values_excluding_self` 등은 전부 **소스 열 키**. 헤더뷰가 클릭 열을 `source_column_of`로 변환해 넘김. Δ 열은 `mapToSource` 무효.
+  - ⚠ **원본 모델에 실제 열 삽입 금지**(18만 `row.insert` 프리즈 + 필터/하이라이트 키 재색인). 추가=`beginInsertColumns` + col_map 재구성(뷰는 보이는 셀만 다시 그림). Δ에서 깨지던 곳: `search_model`은 `source_columns()`로 변환·Δ 스킵, `copy_selection` 헤더는 `column_label(c)`, `_apply_highlight`는 무효 소스 인덱스 스킵.
+  - ⚠ **Δ 셀 색칠 = 프록시 `_delta_color`에 별도 저장**(소스 셀 없음). `data()` BackgroundRole이 *사용자 색 > 첫 행 옅은 회색 > 없음* 순. 3경로(`set_delta_cell_colors`·`color_delta_rows`·`clear_all_delta_colors`). `_emit_delta_bg`가 변경 Δ 열 전 행 1회 dataChanged.
+  - ⚠ **Δ 셀 italic = `data()` FontRole**(셀은 delegate가 honor), **Δ 헤더 italic·헤더 배경(223)은 `paintSection`**(헤더 FontRole 안 읽음).
+  - ⚠ **Δ 열 필터 = Δ값(스냅샷) 기준**(별도 `delta_filters`, `column_filters`와 분리). `_row_passes(i, exclude_src, exclude_delta)` 두 필터 AND. Δ 열 삭제 시 그 필터도 해제.
+  - ⚠ **Δ 비교셀 테두리 + 툴팁**: Δ 셀 선택 시 비교한 두 부모셀에 테두리(R(n)=파랑, R(n-1)=빨강, `gui_delegate.CompareBorderDelegate`). '이전 행'=스냅샷 시점 이전 보이는 행(`_delta_prev`)이라 화면 윗행과 다를 수 있고, 필터로 숨겨졌으면 빨강 생략. 툴팁은 `ToolTipRole`(hover 시 1셀만 조회→18만 행 무비용). selectionModel은 setModel마다 새로 생기니 `_wire_selection_signals`로 재연결.
+
+- **필터창 값별 행 색칠**: 필터창 각 값 우측 색버튼 → 그 값 가진 모든 행 색칠. `source_rows_with_value`(lazy O(N) 1회) → `table_model.highlight_rows`.
+  - ⚠ **별도 row-color 레이어 없이 `highlight_cells`(셀 단위)에 직접 기록**(수동 색칠과 동일 저장소). `highlight_rows`는 셀별 QModelIndex 없이 좌표 기록 후 bounding box 1회 dataChanged.
+  - ⚠ **색버튼은 줄 우측 오버레이**(`_FilterItemRow.resizeEvent`, 체크박스 폭 `Ignored`) — 레이아웃에 넣으면 긴 텍스트가 줄 폭 늘려 버튼이 화면 밖. `QColorDialog` 띄우는 동안 `_dialog_open` 가드로 팝업 자동닫힘 방지, 닫힌 뒤 포커스 복원.
+
+- **MSI 설치/제거 '시작 전' Yes/No 확인창** → 위 "배포" 섹션에 통합(함수형 VBScript `Return="check"` type 4102, `ExecuteAction` 전 스케줄해 No=아무 변경 없음).
+
+- **분석 결과 저장/자동복원(`.viewer`)**: 하이라이트·열필터·Δ·열너비·행높이·스크롤을 **CSV 폴더당 1개 `<폴더>\.viewer`(JSON)**에 Ctrl+S 저장, 다음에 그 CSV를 **처음 열 때 내용 해시 일치하면** 자동 복원. `utils/view_state.py`.
+  - ⚠ **proxy/cache 통째 저장 금지**(피클=본문 중복+Qt 버전의존). **사용자 입력만** 평면 JSON 추출, 파생(`_accepted`·col_map·Δ값)은 재계산. 파일 본문은 저장 안 함(해시로 동일성만).
+  - ⚠⚠ **하이라이트: 저장 포맷 `{색:{열:[행]}}` ↔ 메모리 `{(행,열):색}` 분리가 핵심.** 메모리를 색→열→행으로 바꾸지 말 것 — `data()` BackgroundRole이 스크롤마다 `get((row,col))` O(1)인 핫패스라, 바꾸면 18만 행 렌더가 느려짐. `restore_highlights`는 int/str 열키·구포맷 `[[행,열]]` 모두 처리.
+  - ⚠ **Δ는 '행 리스트' 아니라 '스냅샷 당시 열필터'만 저장**(`_delta_snap_filter[base]`, 보통 빈 dict). 복원 때 그 필터 재적용→`_compute_snapshot`으로 값 재생(무필터 Δ가 range(18만) 정수 저장되는 것 회피).
+  - ⚠ **복원 시점 = 모델 최초 생성 분기에서만**(`update_table` else, 뷰 부착 전). 순서: 필터·Δ(`restore_state`)→하이라이트→col_widths→스크롤. **저장=read-modify-write 머지**(현재 CSV 항목만 교체, 원자적 재기록). 깨진/구버전은 envelope·version 게이트+try/except로 조용히 무시(CSV 열람 절대 안 막음).
+  - ⚠ **JSON = 커스텀 `_pretty`**(구조는 들여쓰고 잎 배열은 한 줄). `json.dump(indent=2)`로 바꾸지 말 것(수만 행 색칠 시 파일 수십 배 팽창). dict 키는 `json.dumps(str(k))`로 수동 문자열화(int 열키→`"5":`). 해시 비용 0(loader가 계산한 `content_hash` 재활용).
+
+- **전체검색 시작 위치 = 내 현재 위치(앵커)부터**(범위검색은 1/N 그대로). 앵커=마지막 선택 셀 유효하면 그 (행,열), 없으면 최상단 보이는 행. `matches`가 (row,col) 오름차순이라 튜플 비교=행우선·열다음 → `bisect_left` O(log N), 헤더 매치(-1,*)는 자동 제외. `currentIndex()`+`rowAt(0)` O(1)만(공통 함정 #1).
+
+- **검색 현재 셀 회색 테두리**: next/prev 시 현재 매치에 회색 2px. 기존 `CompareBorderDelegate`(Δ 테두리)에 검색 마크 추가(`set_search_mark`·`GRAY`, 같은 셀이면 회색 위). 델리게이트 set/clear는 GUI 레이어(`search_gui_update`→`_update_search_mark`), 해제 3곳(빈검색·검색바 닫기·CSV 전환). 헤더 매치(행<0)는 셀 테두리 없음.
+
+- **선택 영역 검색(scoped search)**: Ctrl+F 범위는 **검색바 열 때의 선택 상태**(`capture_scope`, 검색바 *열기 전* 선택해야 함). **열/행 '전체 선택'만** 범위로 인정(셀 클릭/드래그=전체검색). 범위는 닫힐 때까지 sticky(`reset_scope`). 헤더(행 -1)는 전체검색일 때만 포함. 열+행 동시=합집합. **range 직접 분석으로 판정**(공통 함정 #1).
+
+- **CSV 재진입 시 파일 변경 감지 → 캐시 무효화**: `clicked_csv_list`에 `_cache_is_fresh` 게이트. **stat 게이트 + 해시 타이브레이커**: ① stat(size+mtime_ns) 같으면 신선(해시 안 함, ≈7µs) · ② size 다르면 폐기 · ③ **size 같고 mtime만 다를 때만** sha256 비교.
+  - ⚠ **전체해시를 기본으로 안 쓰는 이유**: 재진입마다 GUI 스레드 동기인데 105MB warm 41~130ms라 매 탭전환 끊김. `os.stat`(0.007ms)이 1만 배 싸고 외부 재생성은 mtime/size로 잡힘. **변경 감지 시 그 CSV 뷰 상태(필터·하이라이트·Δ·스크롤·열너비) 전부 초기화**(내용 달라지면 값 기준 필터 무의미).
+
+- **ESC 연타 닫기 간격 상수화**: `ViewerWindow.ESC_INTERVAL_SEC=0.5`. ⚠ **연타 유효 간격 = ESC 안내 토스트 노출 시간**(둘을 같은 상수에 의도적으로 묶음, 토스트=`int(상수×1000)`ms). 독립값으로 분리하지 말 것.
+
+- **열 너비 per-CSV 저장/복원**: CSV 전환 시 너비 기본값(80) 리셋 → `last_view`와 동일 패턴으로 cache에 `col_widths` 키. ⚠ **proxy가 아니라 cache에 저장**(너비=뷰 기하). 복원은 **가로 스크롤보다 먼저**(너비가 스크롤 범위 바꿔 클램프 방지). `len==header.count()` 가드(Δ 열 안전).

@@ -20,6 +20,7 @@ from GUI.ui.widget_esc import Ui_WidgetESC
 
 from GUI.gui_header import FilterHeaderView, MarkerVHeaderView
 from GUI.gui_delegate import CompareBorderDelegate
+from GUI.gui_listmark import EditMarkDelegate
 
 
 class ViewerWindow(QMainWindow, Ui_ViewerWindow):
@@ -30,10 +31,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
     # Undo/Redo(Ctrl+Z/Ctrl+Y): CSV별로 되돌릴 수 있는 최대 '액션' 수 (baseline 제외).
     MAX_UNDO_STEPS = 20
 
-    # 숨기기 트리거: 섹션 경계를 그 섹션의 시작 끝(왼쪽/위)보다 이만큼(px) 더 끌면 숨김.
-    # 음수 = '0 너비를 넘어 마이너스로'. -2 라 끝에 딱 붙이는 정도(0~)는 그냥 최소폭으로 남고, 2px 더 밀어야 숨김.
-    # 실제 사용해보니 반대로 +15까지만 밀어도 접히는게 더 사용자 친화적
-    HIDE_DRAG_THRESHOLD_PX = 20
+    # 숨기기 트리거: 섹션을 끌어 '시작 끝(왼쪽/위)'으로부터 이 px 이하까지 좁히면 숨김.
+    # ⚠ 열과 행을 다르게: 열은 기본폭(80)의 1/4=20px 라 적당하지만, 행은 기본높이(20)와 임계가
+    #   같아 살짝만 끌어도 바로 접혀 빡빡했다 → 행은 기본높이의 1/2=10px 로 낮춰 끄는 여유를 둔다.
+    # ⚠ 줌 연동: 절대 px 가 아니라 'ZOOM_COL_WIDTH/ZOOM_ROW_HEIGHT 의 분수'라 배율을 자동으로 따라간다
+    #   (아래 HIDE_THRESHOLD_COL/ROW property). 100%: 열=80*1/4=20, 행=20*1/2=10.
+    HIDE_THRESH_COL_FRAC = 0.25   # 열: 기본폭의 1/4 이하로 좁히면 숨김
+    HIDE_THRESH_ROW_FRAC = 0.5    # 행: 기본높이의 1/2 이하로 좁히면 숨김
 
     # ---------- 확대/축소(Ctrl + 마우스 휠) ----------
     # 5단계 줌(아주작게/작게/중간/크게/아주크게). 인덱스 2 = 100%(기본, 항상 여기서 시작 — 저장 안 함).
@@ -52,6 +56,16 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 마커 섹션(⋯/︙) 두께 — 줌 단계에 연동(숨김 열/행이 확대/축소를 함께 따라가게).
         # 예전엔 고정 18 상수였으나 property 로 바꿔 마커를 다루는 모든 호출부가 자동으로 줌을 따른다.
         return self.ZOOM_MARKER_PX[self._zoom_index]
+
+    @property
+    def HIDE_THRESHOLD_COL(self):
+        # 열 숨기기 임계(px) = 현재 줌의 기본 열너비 × 1/4. 100%=20.
+        return self.ZOOM_COL_WIDTH[self._zoom_index] * self.HIDE_THRESH_COL_FRAC
+
+    @property
+    def HIDE_THRESHOLD_ROW(self):
+        # 행 숨기기 임계(px) = 현재 줌의 기본 행높이 × 1/2. 100%=10(열보다 끄는 여유가 큼).
+        return self.ZOOM_ROW_HEIGHT[self._zoom_index] * self.HIDE_THRESH_ROW_FRAC
 
     def __init__(self, icon_path, csv_folder=None):
         super(ViewerWindow, self).__init__(None)
@@ -142,6 +156,12 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # CSV List
         self.list_csv_names.currentItemChanged.connect(self.clicked_csv_list)
+
+        # 편집/저장 상태 연필 마커 — 항목 우측 끝에 white/green/yellow 연필 overlay.
+        # _mark_state = {csv명: 'white'|'green'|'yellow'} 영속 출처(리스트 clear/재구성에도 보존).
+        self._mark_state = {}
+        self._mark_delegate = EditMarkDelegate(self.icon_path, self.list_csv_names)
+        self.list_csv_names.setItemDelegate(self._mark_delegate)
 
         # CSV 이름 검색칸: 입력 문자를 포함하는 항목만 표시 + 우측 'x'(지우기) 버튼
         self.edit_csvname_find.setClearButtonEnabled(True)
@@ -261,6 +281,13 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.button_redo.clicked.connect(self.redo)
         self._update_undo_buttons()        # 초기 상태(모델 없음 → 비활성 + disable 아이콘) 반영
 
+        # ---------- 3D 그래프 (button_graph) ----------
+        # 현재 CSV 의 열로 x/y/z 3D 궤적을 그리는 별도 창. GraphWindow 인스턴스 1개를 재사용
+        # (다시 열면 현재 CSV 로 갱신). pyqtgraph/OpenGL 은 무거워 콜드스타트를 늦추므로 import 는
+        # open_graph 에서 지연 로드한다.
+        self._graph_window = None
+        self.button_graph.clicked.connect(self.open_graph)
+
         # ---------- 확대/축소(Ctrl + 마우스 휠) ----------
         # 100%(인덱스 2)가 현재 모습과 픽셀 동일하도록, 줌 폰트는 '지금의 base 폰트'에서 크기만 바꿔 재구성한다.
         # (헤더는 교체된 뒤라 여기서 base 폰트를 캡처한다.)
@@ -345,6 +372,25 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.table_csv.clearSelection()
         self._restore_memento(entry, Memento(highlights={}, fd={}, widths=[default_w] * src_cols, rows=None))
         self.record_history({'highlights', 'fd', 'widths', 'rows'})   # 전 슬라이스 1단계 = 가역
+
+    def open_graph(self):
+        # button_graph: 현재 CSV 를 3D 그래프 창으로 연다. 데이터는 **proxy 모델 기준**(값 필터·Δ
+        # 적용, 단 행/열 '숨기기'는 무시 → 숨긴 것도 포함). graph_dataset() 이 그 (headers, rows) 를 만든다.
+        entry = self._current_edit_entry()
+        if entry is None:
+            self._show_toast("No CSV loaded", success=None)   # 중립(회색) 안내
+            return
+        headers, rows = entry['table_model'].graph_dataset()
+        # GraphWindow 는 pyqtgraph/OpenGL 의존 → 첫 클릭 때 지연 import (콜드스타트 보호)
+        from GUI.gui_graph import GraphWindow
+        if self._graph_window is None:
+            # parent 를 주지 않는다(독립 top-level). 부모를 두면 첫 OpenGL 표시 때 메인 창이
+            # 재생성돼 깜빡인다 → 대신 closeEvent 에서 명시적으로 닫는다.
+            self._graph_window = GraphWindow(self.icon_path)
+        self._graph_window.set_data(headers, rows, self.csv_file_name)
+        self._graph_window.show()
+        self._graph_window.raise_()
+        self._graph_window.activateWindow()
 
     def keyPressEvent(self, event):
         # Initial Ctrl+F Key Pressed
@@ -636,6 +682,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.list_csv_names.clear()
         self.list_csv_names.blockSignals(False)
         self.cache.clear()
+        self._mark_state.clear()                                # 새 폴더 → 모든 연필 마커 초기화
         self._load_view_states()                                # 새 폴더의 .viewer 로드
         self.table_csv.setModel(None)
         self._update_undo_buttons()                             # 폴더 변경 → 히스토리 없음(버튼 비활성)
@@ -774,6 +821,9 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 사라진 파일의 캐시만 제거 (남은 파일의 필터/하이라이트/스크롤/데이터는 그대로)
         for name in [n for n in self.cache if n not in disk_set]:
             del self.cache[name]
+        # 사라진 파일의 연필 마커도 정리 (남은 파일 마커는 보존 → 아래에서 항목에 재적용)
+        for name in [n for n in self._mark_state if n not in disk_set]:
+            self._mark_state.pop(name, None)
 
         prev_selected = self.csv_file_name
 
@@ -788,6 +838,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             entry = self.cache.get(name)
             if entry and entry['status'] in status_color:
                 self.paint_list_csv(name, status_color[entry['status']])
+            if name in self._mark_state:        # 보존된 연필 마커를 재구성된 항목에 다시 적용
+                self._set_item_mark(name, self._mark_state[name])
         # 이전에 보던 CSV가 아직 있으면 조용히 다시 선택 (테이블은 그대로 두어 스크롤·필터 보존)
         if prev_selected in disk_set:
             items = self.list_csv_names.findItems(prev_selected, Qt.MatchFlag.MatchExactly)
@@ -827,6 +879,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         entry['status'] = 'ok'
         self.update_table(csv_file_name)
         self.paint_list_csv(csv_file_name, (230, 255, 230))  # Green
+        self._mark_after_background_load(csv_file_name, entry)  # 다른 CSV 보는 중 로드 완료 시에도 green 연필
 
     def csv_load_empty(self, csv_file_name, signature=None):
         # 디코딩은 됐지만 데이터 행이 없음 -> No Data
@@ -870,6 +923,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             elif entry and entry['status'] == 'fail':
                 self._show_message("Loading Fail")
             self._update_undo_buttons()     # 모델 없음 → undo/redo 비활성
+            self._refresh_mark(csv_file_name)   # 빈/실패 → 히스토리 없음 → 연필 제거
             return
 
         # 모델 부착·기본너비·너비복원 동안 발생하는 sectionResized 는 '프로그램적'이라 undo 기록 대상 아님
@@ -937,6 +991,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self.table_csv.scrollTo(self.table_csv.model().index(0, 0), QAbstractItemView.ScrollHint.PositionAtTop)
 
         self._update_undo_buttons()         # CSV 표시 직후: 이 CSV 히스토리 기준으로 버튼 상태 반영
+        self._refresh_mark(csv_file_name)   # 로드/자동복원/캐시재사용 직후 연필 상태 반영
 
     def _wire_selection_signals(self):
         # selectionModel 은 setModel 마다 새로 생긴다 → 그때 Δ 비교 테두리 핸들러를 (재)연결.
@@ -1158,6 +1213,11 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         file_state.update(proxy.export_state())     # column_filters, deltas
         if view_state.save_file_state(self._folder(), name, file_state):
             self.saved_states[name] = file_state     # 인메모리도 동기화(F5 재로드 시 일관)
+            hist = entry.get('history')
+            if hist is not None:
+                entry['clean_memento'] = hist.current()   # 저장점 = 방금 저장한 상태
+                entry['has_saved'] = self._saved_state_has_analysis(file_state)   # 유효한 분석을 저장했을 때만 green
+            self._refresh_mark(name)
             self._show_toast("Result saved! (.viewer)", success=True)
         else:
             self._show_toast("Save failed! Permission denied", success=False)
@@ -1175,9 +1235,89 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             entry['row_heights'] = view_state.unpack_sizes(saved.get('row_heights'), 20)  # sparse {인덱스:높이}
             if saved.get('scroll'):
                 entry['last_view'] = tuple(saved['scroll'])         # update_table 꼬리의 스크롤 복원이 사용
+            entry['has_saved'] = self._saved_state_has_analysis(saved)   # '유효한 분석'이 담긴 저장본일 때만 green/yellow 대상
         except Exception as e:
             # 저장본이 손상/구버전이어도 CSV 열람은 절대 막지 않음(부분 복원이라도 진행)
             print(f"[ViewState] restore failed for '{name}': {e}")
+
+    # ---------- 편집/저장 상태 연필 마커(목록 우측) ----------
+    # 판정은 '저장/불러오기 시점의 Memento 객체(clean_memento)와 현재가 동일한가'의 identity 비교다.
+    # 실시간 값 비교가 아니라 Undo 스택 위치 기준 — 그 시점으로 되돌아오면(undo) 같은 객체라 다시 clean 이 된다.
+    #   clean_memento : 저장점 Memento. baseline 생성 시 baseline 으로 두고, 저장/자동복원 시 그 시점으로 갱신.
+    #   has_saved     : 그 clean 이 .viewer 저장점인지(True=green/yellow 후보) vs 단순 raw 로드 baseline 인지.
+    def _compute_mark_state(self, entry):
+        # hist = entry.get('history') if entry else None
+        # if hist is None:
+        #     return None                          # 모델/baseline 없음(미로드·빈·실패) → 연필 없음
+        # if entry.get('has_saved'):               # '유효한 분석이 담긴' .viewer 저장점이 있을 때만 green/yellow
+        #     return 'green' if hist.current() is entry.get('clean_memento') else 'yellow'
+        # else:
+        #     return 'None' if hist.current() is entry.get('clean_memento') else 'white'
+
+        if entry is None:   # cache 미생성 - 미전시
+            return None
+
+        saved = entry.get('has_saved')
+        hist = entry.get('history')
+        memento = entry.get('clean_memento')
+
+        if saved:
+            if hist and (hist.current() is not memento):
+                return 'yellow'
+            else:
+                return 'green'
+        else:
+            if hist and (hist.current() is not memento):
+                return 'white'
+            else:
+                return None
+
+    def _saved_state_has_analysis(self, saved):
+        # 저장 상태(file_state dict)에 '유효한 분석'이 하나라도 있는지. 빈 .viewer(스크롤만 등)는 green 아님.
+        if not saved:
+            return False
+        return bool(
+            saved.get('highlights')                                   # 하이라이트
+            or saved.get('column_filters')                            # 열 값 필터
+            or saved.get('deltas')                                    # Δ 가상열
+            or saved.get('hidden_rows') or saved.get('hidden_cols')   # 행/열 숨김
+            or saved.get('col_widths') or saved.get('row_heights')    # 기본과 다른 열너비/행높이
+        )
+
+    def _set_item_mark(self, name, state):
+        # 영속 dict + 항목 data 동기화(항목 data 변경 → 델리게이트 자동 repaint).
+        if state:
+            self._mark_state[name] = state
+        else:
+            self._mark_state.pop(name, None)
+        for item in self.list_csv_names.findItems(name, Qt.MatchFlag.MatchExactly):
+            item.setData(EditMarkDelegate.STATE_ROLE, state)
+
+    def _refresh_mark(self, name=None):
+        # 현재 CSV(또는 지정 CSV)의 연필 상태를 재계산해 반영. 분석 편집/undo/redo/저장/로드 꼬리에서 호출.
+        if name is None:
+            name = self.csv_file_name
+        if not name:
+            return
+        self._set_item_mark(name, self._compute_mark_state(self.cache.get(name)))
+
+    def _saved_is_applicable(self, name, entry):
+        # 이 CSV 에 '지금 내용과 해시 일치 + 유효한 분석이 담긴' .viewer 저장본이 있는가(green 연필 기준).
+        saved = self.saved_states.get(name)
+        return bool(saved
+                    and saved.get('csv_sha256') == entry.get('content_hash')
+                    and self._saved_state_has_analysis(saved))
+
+    def _mark_after_background_load(self, name, entry):
+        # 백그라운드 로드(다른 CSV 보는 중 로드 완료): update_table 이 early-return 해 마커가 안 떴다.
+        # 모델/baseline 은 그 CSV 를 처음 클릭할 때 lazy 생성하고(공유 헤더에서 baseline 너비 오염 회피),
+        # 여기선 '유효 저장본 보유' 여부만 정해 green 연필을 띄운다. 현재 CSV 면 update_table 이 이미 처리.
+        current = self.list_csv_names.currentItem()
+        if current is not None and current.text() == name:
+            return
+        if entry.get('table_model') is None:        # 아직 모델 미생성(순수 백그라운드 로드)일 때만 추정 세팅
+            entry['has_saved'] = self._saved_is_applicable(name, entry)
+        self._refresh_mark(name)
 
     # ---------- Undo / Redo (Ctrl+Z / Ctrl+Y) — CSV별 독립 스택 ----------
     def _current_edit_entry(self):
@@ -1227,6 +1367,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self._height_timer.stop()       # 행높이도 동일(보류 디바운스 흡수 → 중복 단계 방지)
         hist.push(self._make_memento(entry, changed, hist.current()))
         self._update_undo_buttons()         # 새 액션 → undo 가능 + redo 가지 폐기(redo 버튼 비활성)
+        self._refresh_mark()                # 분석 변경 → 연필 상태 갱신(white/yellow)
 
     def _flush_size_debounce(self):
         # 보류 중 너비/행높이 디바운스를 즉시 1단계로 확정(직전 드래그를 자기 단계로 — CSV 전환·reset 전에 호출).
@@ -1242,6 +1383,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # 이미 있으면(캐시 재사용 경로) 건드리지 않아 세션 편집을 보존한다.
         if entry.get('history') is None:
             entry['history'] = EditHistory(self._make_memento(entry, None, None), cap=self.MAX_UNDO_STEPS)
+            entry['clean_memento'] = entry['history'].current()   # 연필 마커 저장점 기준 = 최초 baseline
+            # has_saved 는 _apply_saved_state 가 자동복원 성공 시 True 로 세팅(아니면 raw 로드라 미설정=False).
 
     def undo(self):
         entry = self._current_edit_entry()
@@ -1250,6 +1393,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if m is not None:
             self._restore_memento(entry, m)
         self._update_undo_buttons()
+        self._refresh_mark()                # 되돌림으로 저장점에 도달/이탈 → 연필 갱신
 
     def redo(self):
         entry = self._current_edit_entry()
@@ -1258,6 +1402,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if m is not None:
             self._restore_memento(entry, m)
         self._update_undo_buttons()
+        self._refresh_mark()                # 다시실행으로 저장점에 도달/이탈 → 연필 갱신
 
     def _restore_memento(self, entry, m):
         # .viewer 자동복원과 동일 경로: highlights(소스) → state(프록시 reset) → 너비. 그 후 마크/검색 정리.
@@ -1403,7 +1548,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         if grip is not None and grip[0] == horizontal and rel is not None:
             _, gidx, lead, pre_size = grip
             pos = rel[0] if horizontal else rel[1]
-            if pos - lead <= self.HIDE_DRAG_THRESHOLD_PX:
+            thresh = self.HIDE_THRESHOLD_COL if horizontal else self.HIDE_THRESHOLD_ROW
+            if pos - lead <= thresh:
                 self._do_hide_gesture(horizontal, gidx, pre_size)
                 return
 
@@ -1774,8 +1920,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._zoom_timer.start(800)
 
     def _show_toast(self, text, ms=1400, success=True):
-        # 짧은 알림(table_csv 오른쪽 위 구석, 네모 박스). 성공=초록 / 실패=빨강. ms 후 자동 숨김.
-        if success:
+        # 짧은 알림(table_csv 오른쪽 위 구석, 네모 박스). 성공=초록 / 실패=빨강 / None=회색(중립 안내). ms 후 자동 숨김.
+        if success is None:
+            bg = "rgba(120, 120, 120, 220)"
+        elif success:
             bg = "rgba(54, 186, 101, 220)"
         else:
             bg = "rgba(200, 55, 55, 200)"
@@ -1795,6 +1943,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self._toast_timer.start(ms)
 
     def closeEvent(self, event):
+        # 독립 top-level 그래프 창도 함께 닫는다 (parent 분리라 자동 종료 안 됨 → 안 닫으면
+        # 메인 창을 닫아도 그래프 창이 남아 app 이 종료되지 않음)
+        if self._graph_window is not None:
+            self._graph_window.close()
         # 진행 중인 로더 스레드 정리 (실행 중 GC로 인한 크래시 방지)
         for thread in list(self.loader_threads):
             try:

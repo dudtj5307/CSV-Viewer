@@ -38,6 +38,23 @@ def main():
     setup_std_streams()
     app = QApplication(sys.argv)
 
+    # [임시 디버그] CSVV_GRAPHTEST 면 더미 데이터로 그래프만 띄워 frozen GL 렌더 크래시 지점을 진단.
+    if os.environ.get("CSVV_GRAPHTEST"):
+        print("GRAPHTEST: importing GraphWindow", flush=True)
+        from GUI.gui_graph import GraphWindow
+        print("GRAPHTEST: creating window", flush=True)
+        w = GraphWindow()
+        w.set_data(["x", "y", "z"], [[str(i), str(i * 2), str(i * 3)] for i in range(5)], "graphtest")
+        w.combo_x.setCurrentIndex(w.combo_x.findData(0))
+        w.combo_y.setCurrentIndex(w.combo_y.findData(1))
+        w.combo_z.setCurrentIndex(w.combo_z.findData(2))
+        print("GRAPHTEST: showing (GL render starts)", flush=True)
+        w.show()
+        QTimer.singleShot(3000, app.quit)
+        rc = app.exec()
+        print("GRAPHTEST: exec returned", rc, flush=True)
+        return rc
+
     arg = sys.argv[1] if len(sys.argv) > 1 else None
     folder = arg if (arg and os.path.isdir(arg)) else None
 
