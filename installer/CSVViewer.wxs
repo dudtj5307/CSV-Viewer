@@ -17,7 +17,7 @@
   <Package
       Name="CSV Viewer"
       Manufacturer="ChickenSlayer"
-      Version="1.0.4.0"
+      Version="1.0.5.0"
       ProductCode="$(var.ProductCode)"
       UpgradeCode="BB893716-5CA4-4B5F-8C68-437174BD6795"
       Scope="perMachine"
