@@ -383,7 +383,7 @@ class Ui_ViewerWindow(object):
         self.button_redo.setObjectName("button_redo")
         self.button_info = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_info.setEnabled(True)
-        self.button_info.setGeometry(QtCore.QRect(597, 29, 20, 20))
+        self.button_info.setGeometry(QtCore.QRect(566, 28, 20, 20))
         font = QtGui.QFont()
         font.setFamily("Arial")
         font.setPointSize(10)
@@ -411,25 +411,25 @@ class Ui_ViewerWindow(object):
         self.button_info.setObjectName("button_info")
         self.button_graph = QtWidgets.QPushButton(parent=self.frame_2)
         self.button_graph.setEnabled(True)
-        self.button_graph.setGeometry(QtCore.QRect(530, 30, 41, 19))
+        self.button_graph.setGeometry(QtCore.QRect(531, 25, 27, 25))
         self.button_graph.setStyleSheet("QPushButton {\n"
-"    background-color: rgb(253, 253, 253);\n"
-"    border: 1px solid black;\n"
+"    background-color: rgba(253, 253, 253, 0);\n"
 "    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
 "    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "}\n"
 "\n"
 "QPushButton:disabled {\n"
 "    color: rgb(200,200,200);\n"
 "}")
+        self.button_graph.setText("")
         self.button_graph.setObjectName("button_graph")
         self.gridLayout_3.addWidget(self.frame_2, 0, 0, 1, 1)
         self.frame = QtWidgets.QFrame(parent=self.centralwidget)
@@ -608,7 +608,6 @@ class Ui_ViewerWindow(object):
         ViewerWindow.setWindowTitle(_translate("ViewerWindow", "MainWindow"))
         self.button_rename.setText(_translate("ViewerWindow", "Rename"))
         self.button_info.setText(_translate("ViewerWindow", "i"))
-        self.button_graph.setText(_translate("ViewerWindow", "graph"))
         self.edit_text_input.setToolTip(_translate("ViewerWindow", "Search whole table (Enter)"))
         self.edit_text_input.setPlaceholderText(_translate("ViewerWindow", "Search whole table (Enter)"))
         self.button_forward.setToolTip(_translate("ViewerWindow", "Previous (F2)"))

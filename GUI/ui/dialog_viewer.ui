@@ -642,8 +642,8 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>597</x>
-         <y>29</y>
+         <x>566</x>
+         <y>28</y>
          <width>20</width>
          <height>20</height>
         </rect>
@@ -692,26 +692,25 @@ QPushButton:disabled {
        </property>
        <property name="geometry">
         <rect>
-         <x>530</x>
-         <y>30</y>
-         <width>41</width>
-         <height>19</height>
+         <x>531</x>
+         <y>25</y>
+         <width>27</width>
+         <height>25</height>
         </rect>
        </property>
        <property name="styleSheet">
         <string notr="true">QPushButton {
-    background-color: rgb(253, 253, 253);
-    border: 1px solid black;
+    background-color: rgba(253, 253, 253, 0);
     border-radius: 4px;
 }
 
 QPushButton:hover {
-	border: 2px solid #333;
+	border: 1px solid #333;
 }
 
 QPushButton:pressed {
     background-color: lightgray;
- 	border: 2px solid #000;
+ 	border: 1px solid #000;
 }
 
 QPushButton:disabled {
@@ -719,7 +718,7 @@ QPushButton:disabled {
 }</string>
        </property>
        <property name="text">
-        <string>graph</string>
+        <string/>
        </property>
       </widget>
      </widget>

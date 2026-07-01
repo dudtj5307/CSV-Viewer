@@ -1,10 +1,9 @@
 import os
 import sys
-import time
 import hashlib
 from bisect import bisect_right
 
-from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QWidget, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QGraphicsDropShadowEffect, QHeaderView
+from PyQt6.QtWidgets import QAbstractItemView, QMainWindow, QTableView, QApplication, QColorDialog, QLabel, QFileDialog, QMessageBox, QHeaderView
 from PyQt6.QtGui import QIcon, QPixmap, QBrush, QColor, QMovie, QFont
 from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
 
@@ -16,17 +15,16 @@ from utils.edit_history import EditHistory, Memento
 from utils import view_state
 
 from GUI.ui.dialog_viewer import Ui_ViewerWindow
-from GUI.ui.widget_esc import Ui_WidgetESC
 
+from GUI.gui_esc import EscCloseToast
 from GUI.gui_header import FilterHeaderView, MarkerVHeaderView
 from GUI.gui_delegate import CompareBorderDelegate
 from GUI.gui_listmark import EditMarkDelegate
 
 
 class ViewerWindow(QMainWindow, Ui_ViewerWindow):
-    # ESC 연타로 창 닫기: 첫 ESC 후 이 시간(초) 이내 다시 누르면 닫힘.
-    # ESC 안내 토스트가 떠 있는 시간도 동일 값으로 묶는다(연타 유효 시간 = 안내 노출 시간).
-    ESC_INTERVAL_SEC = 0.5
+    # ESC 연타로 창 닫기 기능은 GUI/gui_esc.EscCloseToast 로 분리됨(GraphWindow 와 공유).
+    # 간격/토스트 상수는 EscCloseToast.INTERVAL_SEC 참조.
 
     # Undo/Redo(Ctrl+Z/Ctrl+Y): CSV별로 되돌릴 수 있는 최대 '액션' 수 (baseline 제외).
     MAX_UNDO_STEPS = 20
@@ -167,14 +165,8 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         self.edit_csvname_find.setClearButtonEnabled(True)
         self.edit_csvname_find.textChanged.connect(self._filter_csv_list)
 
-        # ESC widget for closing this window  (둥근 토스트 + 가장자리로 옅어지는 그림자)
-        self.last_esc_time = 0
-        self.widget_esc = QWidget(self)
-        self.widget_esc.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.ui_esc = Ui_WidgetESC()
-        self.ui_esc.setupUi(self.widget_esc)
-        self._style_esc_toast()
-        self.widget_esc.hide()
+        # ESC 연타로 창 닫기 토스트(둥근 토스트 + 그림자) — EscCloseToast(gui_esc)로 분리, GraphWindow 와 공유.
+        self.esc_toast = EscCloseToast(self)
 
         # Search Widget
         self.search_model = SearchModel(self.table_csv)
@@ -286,6 +278,10 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
         # (다시 열면 현재 CSV 로 갱신). pyqtgraph/OpenGL 은 무거워 콜드스타트를 늦추므로 import 는
         # open_graph 에서 지연 로드한다.
         self._graph_window = None
+        # 3D 축/큐브 아이콘. 원본 png 가 정사각(669x639)이라 작은 버튼(27x21)에 default iconSize
+        # 로는 작게 찍혀, 버튼 내부(테두리 1px 제외)를 채우도록 iconSize 를 명시한다.
+        self.button_graph.setIcon(QIcon(os.path.join(self.icon_path, "button_graph.png")))
+        self.button_graph.setIconSize(QSize(27, 25))
         self.button_graph.clicked.connect(self.open_graph)
 
         # ---------- 확대/축소(Ctrl + 마우스 휠) ----------
@@ -387,7 +383,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             # parent 를 주지 않는다(독립 top-level). 부모를 두면 첫 OpenGL 표시 때 메인 창이
             # 재생성돼 깜빡인다 → 대신 closeEvent 에서 명시적으로 닫는다.
             self._graph_window = GraphWindow(self.icon_path)
-        self._graph_window.set_data(headers, rows, self.csv_file_name)
+        self._graph_window.set_data(headers, rows, self.csv_file_name, self._folder())
         self._graph_window.show()
         self._graph_window.raise_()
         self._graph_window.activateWindow()
@@ -404,10 +400,7 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
 
         # 'ESC' Key Pressed & Search Widget Off
         elif event.key() == Qt.Key.Key_Escape and not self.frame_search.isVisible():
-            if time.time() - self.last_esc_time < self.ESC_INTERVAL_SEC:  # ESC 연타 간격(초)
-                self.close()
-            self.last_esc_time = time.time()    # Update last esc pressed time
-            self.show_esc_message()
+            self.esc_toast.handle_esc()   # 첫 ESC=안내 토스트, 간격 내 재-ESC=창 닫힘
 
         # 'Enter' Key Pressed & Search Widget On
         elif ((event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter)
@@ -462,42 +455,6 @@ class ViewerWindow(QMainWindow, Ui_ViewerWindow):
             self._center_spinner()
         if self.message_label.isVisible():
             self._center_message()
-
-    def _style_esc_toast(self):
-        # 투박한 회색 박스 → 둥근 알약 + 위→아래 옅은 그라데이션 + 가장자리로 번지는 부드러운 그림자.
-        # (GUI/ui/widget_esc.py 는 자동생성이라 건드리지 않고 여기서 다시 입힌다.)
-        label = self.ui_esc.label_esc
-        # 첫 ESC는 안내만 띄우고 1초 내 다시 누르면 닫힘 → "다시 누르면 나간다"는 뜻을 간결히 전달
-        label.setText("Press ESC again to exit")
-        label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        # 알약 폭은 문구 길이에 맞춰 자동 산정 (문구가 바뀌어도 잘리지 않게)
-        PAD_H, PILL_H, MARGIN = 28, 64, 34     # PAD_H=좌우 안쪽 여백, MARGIN=그림자 번질 여백
-        PILL_W = label.fontMetrics().horizontalAdvance(label.text()) + PAD_H * 2
-        label.setFixedSize(PILL_W, PILL_H)
-        label.move(MARGIN, MARGIN)
-        label.setStyleSheet(
-            "QLabel {"
-            "  color: rgba(248, 250, 252, 235);"
-            "  background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,"
-            "      stop:0 rgba(118, 137, 176, 200), stop:1 rgba(82, 95, 122, 200));"
-            "  border-radius: 18px;"
-            "}"
-        )
-        # 가장자리로 갈수록 옅어지는 그림자(글로우) → 박스가 화면 위에 부드럽게 떠 보이게
-        shadow = QGraphicsDropShadowEffect(self.widget_esc)
-        shadow.setBlurRadius(26)
-        shadow.setColor(QColor(20, 25, 40, 110))
-        shadow.setOffset(0, 6)
-        label.setGraphicsEffect(shadow)
-        # 그림자 여백까지 포함한 크기 (show_esc_message 가 이 크기로 창 가운데 정렬)
-        self.widget_esc.resize(PILL_W + 2 * MARGIN, PILL_H + 2 * MARGIN)
-
-    def show_esc_message(self):
-        pos_x = (self.width() - self.widget_esc.width()) // 2
-        pos_y = (self.height() - self.widget_esc.height()) // 2
-        self.widget_esc.setGeometry(pos_x, pos_y, self.widget_esc.width(), self.widget_esc.height(),)
-        self.widget_esc.show()
-        QTimer.singleShot(int(self.ESC_INTERVAL_SEC * 1000), self.widget_esc.hide)  # 토스트 표시 시간 = 연타 유효 시간
 
     def add_item(self, csv_file_name):
         self.list_csv_names.addItem(csv_file_name)   # 리스트 표시명 = CSV 파일명(.csv 제외)

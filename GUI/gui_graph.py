@@ -4,7 +4,7 @@ ViewerWindow.open_graph 이 현재 CSV 의 raw 데이터(헤더 + 전체 행)를
 - combo_x/y/z : 축으로 쓸 열 선택. 숫자 열만 선택 가능(비숫자 열은 disable).
 - combo_time  : '시간' 열. 고르면 자취(trail) 모드 — bar_time(슬라이더)/▶재생으로 시각 T 를 훑으며
                 각 트랙이 T 까지의 경로만 그려지고 트랙별 마커가 동기 이동. 현재 시각은
-                plainTextEdit_timestamp 에 '현재/총'(실제 표본 시각으로 스냅) 표시. '(row #)'면 전체 경로.
+                plainTextEdit_timestamp 에 '현재/총'(실제 표본 시각으로 스냅) 표시. '(none)'이면 전체 경로.
 - combo_track : 트랙(그룹) 열. 그 열의 고유값마다 궤적을 분리해 그리고, scrollArea 에 값 목록을
                 체크박스(표시/숨김) + 색버튼(트랙별 색)으로 나열한다(gui_filter 패턴 참고).
 
@@ -41,6 +41,7 @@ from PyQt6.QtGui import (QColor, QIcon, QFont, QPainter, QPen, QVector3D,
                          QVector4D, QTextOption, QShortcut, QKeySequence)
 
 from GUI.ui.widget_graph import Ui_GraphForm
+from GUI.gui_esc import EscCloseToast
 from GUI.gui_filter import _FilterItemRow, _filter_sort_key
 
 
@@ -263,6 +264,43 @@ class _TickText(gl.GLTextItem):
         painter.end()
 
 
+class _AxisTitleText(gl.GLTextItem):
+    """축 이름(선택 열 이름) 라벨. 기본 GLTextItem 은 카메라를 향해 빌보드로 돌지만(글자가 항상
+    수평·나를 향함), 이 클래스는 '화면에 투영된 축 방향' 각도만큼 글자를 기울여 그린다 → 글자가
+    축과 나란히 눕고, 카메라를 돌리면 축을 따라 함께 회전한다(z축이 세로로 서면 글자도 옆으로 눕는다).
+    글자는 앵커(축 중앙 바깥점)에 '가운데 정렬'. 뒤집힘 방지로 각도를 [-90°,90°]로 접는다."""
+
+    def __init__(self, axis_dir=(1.0, 0.0, 0.0), **kwds):
+        self._axis_dir = np.array(axis_dir, dtype=float)
+        super().__init__(**kwds)
+
+    def paint(self):
+        if len(self.text) < 1:
+            return
+        self.setupGLState()
+        proj = self.compute_projection()
+        pos = np.asarray(self.pos, dtype=float)
+        p0 = proj.map(QVector3D(*pos)).toPointF()
+        p1 = proj.map(QVector3D(*(pos + self._axis_dir))).toPointF()   # 축 방향 1칸 앞
+        angle = math.degrees(math.atan2(p1.y() - p0.y(), p1.x() - p0.x()))
+        if angle > 90.0:            # 글자가 위아래로 뒤집히지 않게 읽기 방향 유지
+            angle -= 180.0
+        elif angle < -90.0:
+            angle += 180.0
+        painter = QPainter(self.view())
+        painter.setPen(self.color)
+        painter.setFont(self.font)
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing |
+                               QPainter.RenderHint.TextAntialiasing)
+        painter.translate(p0.x(), p0.y())
+        painter.rotate(angle)
+        fm = painter.fontMetrics()
+        w = fm.horizontalAdvance(self.text)
+        # 앵커 점에 가운데 정렬(가로=글자폭 절반 당김, 세로=대략 중앙).
+        painter.drawText(QPointF(-w / 2.0, (fm.ascent() - fm.descent()) / 2.0), self.text)
+        painter.end()
+
+
 # ---------------------------------------------------------------------------
 # 카메라 방향 표시 gizmo (좌상단 오버레이)
 # ---------------------------------------------------------------------------
@@ -420,18 +458,34 @@ class GraphWindow(QWidget, Ui_GraphForm):
     AXIS_TICKS = 10                            # 그리드 칸 수(배경 바둑판 — 데이터 눈금과 별개의 균등 배경)
     TICK_COUNT_TARGET = 8                       # nice 눈금 목표 간격 수(실제 개수는 라운드 step 에 따라 가변)
     TICK_FONT_PT = 8                           # 눈금 숫자 글씨 크기(기본 GLTextItem 16 의 절반)
+    AXIS_TITLE_FONT_PT = 10                     # 축 이름(열 이름) 글씨 크기(눈금보다 큼, 기본 16 보다 작게)
     # 눈금 숫자 화면 픽셀 오프셋 (dx, dy) — x=축 아래, y·z=축 왼쪽(전부 축 바깥쪽). 화면 y 는 아래로 +.
     # 눈금선과 숫자의 수직거리를 적당히 띄움(x=아래로, y·z=왼쪽으로). y 는 옆에서 본 뷰(축이 가로로
     # 누움)에서 축과 겹치지 않도록 아래(dy)로도 충분히 내림.
     TICK_LABEL_OFFSET = {0: (4.0, 12.0), 1: (4.0, 12.0), 2: (4.0, 12.0)}
     AXIS_OVERSHOOT = 1.05                       # 축선을 범위(L)보다 살짝 더 연장(끝 라벨 x/y/z 에 가깝게)
+    # 축 이름(선택 열 이름) 라벨 — 축 가운데(L/2)에서 큐브 바깥쪽으로 밀어낸 거리(L 대비 비율)·색.
+    AXIS_TITLE_OFFSET_FRAC = 0.18
+    AXIS_TITLE_COLOR = (235, 235, 235)          # 밝은 회색(눈금 170 보다 밝아 제목으로 구분)
     TICK_DOT_SIZE = 5                           # 축 눈금 위치 점 크기(px)
     TICK_DOT_COLOR = (0.80, 0.80, 0.80, 1.0)    # 축 눈금 위치 점 색(연회색)
+    # 0 눈금 강조 — 부호가 넘어가면(또는 여백에 0이 뜨면) 원점 눈금이 다른 회색 눈금들 사이에서
+    # 눈에 띄도록 라벨=밝은 흰색+볼드, 점=크게+흰색. (val==0 은 nice_ticks 가 step 배수라 정확히 0.0)
+    ZERO_DOT_SIZE = 6                           # 0 눈금 점 크기(px) — 일반(5)보다 크게
+    ZERO_DOT_COLOR = (1.0, 1.0, 1.0, 1.0)       # 0 눈금 점 색(흰색)
+    ZERO_LABEL_COLOR = (240, 240, 240)          # 0 라벨 색(밝은 흰색) — 일반 눈금(170)보다 밝게
     # ---- 마우스 호버 정보(툴팁/링) ----
     PICK_RADIUS_PT = 13                         # 점(꼭짓점/마커) 히트 판정 반경(px) — 이내면 좌표 툴팁
     PICK_RADIUS_LINE = 8                        # 선(세그먼트) 히트 판정 반경(px) — 이내면 트랙명만
     HOVER_RING_SIZE = 18                        # 호버 강조 헤일로 크기(px) — 마커(9)보다 크게
     HOVER_RING_COLOR = (1.0, 1.0, 1.0, 0.55)    # 호버 강조 헤일로 색(밝은 반투명 흰색)
+    LOCK_RING_COLOR = (1.0, 0.82, 0.20, 0.85)   # 락온 강조 헤일로 색(앰버 — 호버 흰색과 구분)
+    CLICK_MOVE_TOL2 = 16.0                       # 클릭 판정: press~release 이동 제곱(px²) 이내면 클릭(이상=드래그)
+    # 오버레이 라벨 스타일 — 호버(회색 테두리) vs 락온(앰버 테두리)으로 상태를 눈으로 구분.
+    _HOVER_QSS = ("QLabel { background-color: rgba(18,18,18,225); color: rgb(235,235,235);"
+                  " border: 1px solid rgb(95,95,95); border-radius: 4px; padding: 4px 7px; }")
+    _LOCK_QSS = ("QLabel { background-color: rgba(18,18,18,232); color: rgb(245,238,210);"
+                 " border: 1px solid rgb(220,180,60); border-radius: 4px; padding: 4px 7px; }")
 
     def __init__(self, icon_path=None):
         # ⚠ 부모를 두지 않는다(독립 top-level 창). 메인 창(ViewerWindow)을 부모로 둔 채 Qt.Window
@@ -446,7 +500,8 @@ class GraphWindow(QWidget, Ui_GraphForm):
             self.setWindowIcon(QIcon(os.path.join(icon_path, "button_csv_view.png")))
 
         self._loading = False
-        self._title = ""            # set_data 의 title (그래프 이미지 저장 기본 파일명에 사용)
+        self._title = ""            # set_data 의 title(=csv 파일명) — 저장 기본 파일명에 사용
+        self._folder_path = ""      # 현재 CSV 가 있는 폴더 전체경로 — 저장창 시작경로 + 파일명 접두(폴더명)
         self.headers = []
         self.rows = []
         self._numeric = set()
@@ -455,6 +510,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._track_color = {}      # value -> (r,g,b,a)
         self._track_visible = {}    # value -> bool
         self._track_cb = {}         # value -> QCheckBox
+        self._track_master_cb = None  # (Select All) 마스터 체크박스(트랙 목록 있을 때만 생성)
         # 트랙별 '시간순 정렬' 캐시 — 자취(trail) 그릴 때 T 까지의 prefix 를 searchsorted 로 O(log n)
         # 잘라 쓰려고 미리 만든다(트랙/시간 열 바뀔 때만 재구성). value -> (정렬된 행 idx ndarray).
         self._track_sorted = {}     # value -> ndarray[int]  (시간 오름차순, 시간 비활성이면 행 순서)
@@ -477,6 +533,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._axis_items = []       # X/Y/Z 축선 GLLinePlotItem 들(진한 회색·원점 고정)
         self._labels = []           # 축 이름(x/y/z) + 눈금 숫자 GLTextItem 들
         self._tick_font = QFont("Helvetica", self.TICK_FONT_PT)   # 눈금 숫자 글씨(작게)
+        self._title_font = QFont("Helvetica", self.AXIS_TITLE_FONT_PT)   # 축 이름(열 이름) 글씨
 
         # ---- GL scene 기본 아이템 ----
         view = self.graph_area
@@ -498,12 +555,21 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._marker_label.setVisible(False)
         view.addItem(self._marker_label)
         self._tick_dots = gl.GLScatterPlotItem()   # 축 눈금 위치 점들(작은 점)
+        self._tick_dots.setGLOptions(self._ON_TOP_GL)  # 깊이검사 끔 → 축선 위(같은 위치라도 점이 안 가림)
+        self._tick_dots.setDepthValue(5)               # 축선·데이터(0) 뒤 = 위에 그림. 마커(10)·호버링(11)보단 아래
         self._tick_dots.setVisible(False)
         view.addItem(self._tick_dots)
+        # 락온 강조 링(앰버) — 호버 링과 별개라 락온 유지 중에도 호버 링을 동시에 띄울 수 있다.
+        self._lock_ring = gl.GLScatterPlotItem()
+        self._lock_ring.setGLOptions(self._ON_TOP_GL)
+        self._lock_ring.setDepthValue(11)            # 마커(10)보다 위, 호버 링(12)보단 아래
+        self._lock_ring.setVisible(False)
+        view.addItem(self._lock_ring)
         # 호버 강조 링 — 마우스가 올라간 데이터 점을 최상단(_ON_TOP_GL) 밝은 헤일로로 강조.
+        # 락온 링(11)보다 위(12)에 둬 흰색 호버가 앰버 락온 위로 올라온다.
         self._hover_ring = gl.GLScatterPlotItem()
         self._hover_ring.setGLOptions(self._ON_TOP_GL)
-        self._hover_ring.setDepthValue(11)           # 마커(10)보다 위
+        self._hover_ring.setDepthValue(12)           # 락온 링(11)보다 위(호버가 강조 우선)
         self._hover_ring.setVisible(False)
         view.addItem(self._hover_ring)
 
@@ -518,7 +584,11 @@ class GraphWindow(QWidget, Ui_GraphForm):
         # 줌(휠) 연동 눈금 세분: _frame_scene 이 잡는 기본 카메라 거리를 _base_distance 로 기억해 두고,
         # 휠로 확대(거리↓)하면 그 배율만큼 눈금 target 을 키워 간격을 세분한다(2배 확대=절반 간격).
         # GLViewWidget 은 줌 시그널이 없어 wheelEvent 를 인스턴스 교체(mouseMove 와 동일 패턴)해 가로챈다.
+        # ⚠ Ctrl+휠은 GLViewWidget 기본동작이 거리(distance)가 아니라 fov(시야각)를 줄여 줌하므로,
+        #   거리만 보면 Ctrl 줌에서 배율이 1로 남아 눈금이 안 세분된다 → fov 기준값도 같이 기억해
+        #   _apply_tick_density 가 거리·fov 양쪽 줌을 합산한다.
         self._base_distance = None
+        self._base_fov = self.graph_area.opts.get('fov', 60.0)
         self._tick_target = self.TICK_COUNT_TARGET
         self._gl_orig_wheel = self.graph_area.wheelEvent
         self.graph_area.wheelEvent = self._gl_wheel
@@ -540,27 +610,43 @@ class GraphWindow(QWidget, Ui_GraphForm):
             2: (self.lineEdit_z_min, self.lineEdit_z_max),
         }
         self._axis_range = {0: None, 1: None, 2: None}   # axis → (vmin, vmax) 또는 None
+        self._axis_col = {0: -1, 1: -1, 2: -1}            # axis → 현재 반영된 소스 열(-1=(none))
         self._reset_ranges()
 
         # ---- 시그널 ----
-        self.combo_x.currentIndexChanged.connect(lambda: self._on_axis_column_changed(0))
-        self.combo_y.currentIndexChanged.connect(lambda: self._on_axis_column_changed(1))
-        self.combo_z.currentIndexChanged.connect(lambda: self._on_axis_column_changed(2))
+        # ⚠ currentIndexChanged 는 '인덱스가 바뀔 때만' 온다 → 같은 축을 다시 골라도(사용자가 고친
+        #   범위를 데이터 min/max 로 되돌리고 싶은 경우) 안 온다. activated(사용자 선택이면 같은 항목
+        #   재선택에도 발생)를 함께 연결해 재선택도 범위가 리셋되게 한다. 둘 다 오는 다른-열 선택은
+        #   _on_axis_column_changed 의 dedup(열·범위 동일하면 skip)이 중복 _redraw 를 막는다.
+        for combo, ax in ((self.combo_x, 0), (self.combo_y, 1), (self.combo_z, 2)):
+            combo.currentIndexChanged.connect(lambda _=None, a=ax: self._on_axis_column_changed(a))
+            combo.activated.connect(lambda _=None, a=ax: self._on_axis_column_changed(a))
+        # button_x/y/z = 그 축 선택을 '(none)'(콤보 index 0)으로 초기화
+        self.button_x.clicked.connect(lambda: self._clear_axis(0))
+        self.button_y.clicked.connect(lambda: self._clear_axis(1))
+        self.button_z.clicked.connect(lambda: self._clear_axis(2))
         for ax, (e_min, e_max) in self._range_edits.items():
             e_min.editingFinished.connect(lambda a=ax: self._on_range_edited(a))
             e_max.editingFinished.connect(lambda a=ax: self._on_range_edited(a))
         # time 열 = 자취(trail) on/off + 타임라인 정의. 슬라이더는 0..STEPS 분수로 시각 T 매핑.
         self.combo_time.currentIndexChanged.connect(self._on_time_column_changed)
+        # button_time = 시간 열 선택을 '(none)'(콤보 index 0)으로 초기화 (button_x/y/z 와 동일 패턴)
+        self.button_time.clicked.connect(lambda: self.combo_time.setCurrentIndex(0))
         self.bar_time.valueChanged.connect(self._on_time_slider_changed)
         # sliderMoved=사용자 드래그만(프로그램적 setValue 는 안 옴) → 누산기를 사용자 위치로 동기화
         self.bar_time.sliderMoved.connect(lambda v: setattr(self, "_pos", float(v)))
         self.combo_track.currentIndexChanged.connect(self._on_track_column_changed)
+        # button_track = 트랙 열 선택을 '(none)'(콤보 index 0)으로 초기화 (button_x/y/z 와 동일 패턴)
+        self.button_track.clicked.connect(lambda: self.combo_track.setCurrentIndex(0))
+        # 트랙 목록 검색창 — dialog_filter 의 edit_filter_text 와 동일(이름 부분일치로 '보이는' 항목만).
+        self.lineEdit_track_search.setClearButtonEnabled(True)
+        self.lineEdit_track_search.textChanged.connect(self._filter_track_items)
         # 재생 컨트롤
         self.button_time_play.clicked.connect(self._toggle_play)
         self.button_time_speed.clicked.connect(self._cycle_speed)
         # 시점(카메라) 초기화 — 처음 봤던 각도·거리·중심으로 복귀(이미지/텍스트는 추후 결정)
         self.button_graph_reset.clicked.connect(self._reset_view)
-        self.button_time_play.setText("▷")
+        self.button_time_play.setText("▶")
         self.button_time_speed.setText(f"{self.SPEEDS[self._speed_idx]:.1f}x")
         self.plainTextEdit_timestamp.setPlainText("")
         # plainTextEdit_timestamp 우측 정렬 — QPlainTextEdit 은 setAlignment 가 없어 문서 기본
@@ -583,11 +669,28 @@ class GraphWindow(QWidget, Ui_GraphForm):
         sc_copy = QShortcut(QKeySequence("Ctrl+C"), self)
         sc_copy.activated.connect(self.copy_graph_image)
 
+        # ESC 연타로 창 닫기 — ViewerWindow 와 동일 동작(EscCloseToast, gui_esc). 첫 ESC=안내,
+        # 간격 내 재-ESC=창 닫힘.
+        # ⚠ keyPressEvent 로는 안 된다 — 그래프 창은 graph_area(GL)/콤보/lineEdit 등 포커스 가능한
+        #   자식이 ESC 를 먼저 먹어 창까지 안 올라온다. Ctrl+S/Ctrl+C 와 동일하게 QShortcut
+        #   (WindowShortcut=창 활성 시 포커스 무관 동작)으로 잡는다.
+        self.esc_toast = EscCloseToast(self)
+        sc_esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        sc_esc.activated.connect(self.esc_toast.handle_esc)
+
     # ---------- 데이터 주입 (재오픈 시 새 CSV 로 갱신) ----------
-    def set_data(self, headers, rows, title=None):
+    def set_data(self, headers, rows, title=None, folder=None):
         self._loading = True
-        self._title = title or ""   # 저장 기본 파일명용
+        self._title = title or ""   # csv 파일명(저장 기본 파일명에 폴더명과 조합)
+        self._folder_path = folder or ""   # CSV 폴더 전체경로(저장창 시작경로 + 파일명 접두)
         self._last_sel = None       # 새 CSV → 시야를 다시 잡도록 초기화
+        self._lock = None           # 새 CSV(=창 껐다 켬 재사용 포함) → 락온 해제
+        self._lock_pt_cache = None
+        # ⚠ 오버레이는 명시적으로 숨긴다 — 아래 _redraw 의 '축 없음' 분기가 _release_lock 으로 숨겨주지만
+        #   그 가드(`if self._lock is not None`)가 위에서 이미 None 으로 만든 탓에 안 타 stale 앰버 링/
+        #   라벨이 남는다(창 재사용 시 이전 락온이 그대로 보이던 원인). 호버 오버레이도 같이 정리.
+        self._hide_lock()
+        self._hide_hover()
         self._pause()               # 재생 중이었으면 멈춤
         self.headers = list(headers or [])
         self.rows = rows or []
@@ -597,7 +700,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
             self.setWindowTitle(f"{title} - 3D Graph")
         self._populate_combos()
         self._reset_ranges()        # 축 범위 편집칸 비우고 비활성(전부 '(none)' 시작)
-        self._setup_timeline()      # combo_time 기준 타임라인/슬라이더(기본 '(row #)'=시간 비활성=전체)
+        self._setup_timeline()      # combo_time 기준 타임라인/슬라이더(기본 '(none)'=시간 비활성=전체)
         self._loading = False
         self._build_track_list()    # 트랙 열 기본 '(none)' → 목록 비움
         self._rebuild_track_order() # 트랙×시간 정렬 캐시 구성
@@ -619,10 +722,10 @@ class GraphWindow(QWidget, Ui_GraphForm):
                         item.setEnabled(False)   # 비숫자 열 → 선택 불가(회색)
             combo.setCurrentIndex(0)
             combo.blockSignals(False)
-        # time / track: 모든 열 허용. time 은 '(row #)', track 은 '(none)'.
+        # time / track: 모든 열 허용. time·track 모두 '(none)'(=col<0=미선택).
         self.combo_time.blockSignals(True)
         self.combo_time.clear()
-        self.combo_time.addItem("(row #)", -1)
+        self.combo_time.addItem("(none)", -1)
         for c, name in enumerate(self.headers):
             self.combo_time.addItem(str(name), c)
         self.combo_time.setCurrentIndex(0)
@@ -646,15 +749,30 @@ class GraphWindow(QWidget, Ui_GraphForm):
         """모든 축 범위를 비우고 편집칸을 빈칸·비활성으로(전부 '(none)' 시작/새 CSV)."""
         for axis in (0, 1, 2):
             self._axis_range[axis] = None
+            self._axis_col[axis] = -1
             self._fill_range_edits(axis, None)
 
+    def _clear_axis(self, axis):
+        """button_x/y/z — 그 축 선택을 '(none)'(콤보 index 0)으로 초기화. setCurrentIndex 가
+        currentIndexChanged → _on_axis_column_changed 를 태워 락 해제·범위 비움·재그리기까지 처리
+        (이미 '(none)'이면 시그널이 안 와 무동작)."""
+        (self.combo_x, self.combo_y, self.combo_z)[axis].setCurrentIndex(0)
+
     def _on_axis_column_changed(self, axis):
-        """축 콤보 변경 → 그 열 데이터의 min/max 를 범위로 잡아 편집칸에 채우고 다시 그린다."""
+        """축 콤보 변경(또는 같은 축 재선택) → 그 열 데이터의 min/max 를 범위로 잡아 편집칸에
+        채우고 다시 그린다. currentIndexChanged(다른 열·프로그램적)·activated(사용자 재선택 포함)
+        양쪽에서 호출되며, 재선택이면 사용자가 고쳤던 범위를 데이터 min/max 로 되돌린다."""
         if self._loading:
             return
         combo = (self.combo_x, self.combo_y, self.combo_z)[axis]
         col = self._combo_col(combo)
         rng = self._data_minmax(col) if col >= 0 else None
+        # dedup: 다른 열 선택은 currentIndexChanged·activated 가 둘 다 온다 → 열도 같고 범위도 이미
+        # 데이터 min/max 그대로면(두 번째 호출·변화 없는 재선택) 이중 _redraw 를 막고 빠진다.
+        if self._axis_col[axis] == col and self._axis_range[axis] == rng:
+            return
+        self._release_lock()        # 축이 바뀌거나 범위가 리셋됨 → 좌표 의미가 달라짐 → 락온 해제
+        self._axis_col[axis] = col
         self._axis_range[axis] = rng
         self._fill_range_edits(axis, rng)
         self._redraw()
@@ -749,7 +867,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
     # ---------- 시간 타임라인 / 재생 ----------
     def _setup_timeline(self):
         """combo_time 열로 타임라인을 정한다. 숫자/시계로 파싱되면 '실제 시간 값' 기준(자취),
-        열을 골랐지만 파싱 불가면 행 인덱스로 폴백(자취), '(row #)'(=col<0) 선택이면 비활성(전체)."""
+        열을 골랐지만 파싱 불가면 행 인덱스로 폴백(자취), '(none)'(=col<0) 선택이면 비활성(전체)."""
         col = self._combo_col(self.combo_time)
         n = len(self.rows)
         self._time_values = None
@@ -815,6 +933,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
     def _on_time_column_changed(self, *_):
         if self._loading:
             return
+        self._release_lock()        # 자취↔전체 모드가 바뀌면 락 의미가 달라짐 → 해제
         self._pause()
         self._setup_timeline()
         self._rebuild_track_order()      # 시간 순서 바뀜 → 트랙 정렬 캐시 갱신
@@ -829,12 +948,15 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._update_timestamp()
 
     def _update_timestamp(self):
-        """plainTextEdit_timestamp = '현재 / 총' 진행 표시(현재=실제 표본 시각). 시간 비활성이면 빈칸."""
+        """plainTextEdit_timestamp = '현재 / 총 (진행%)' 표시(현재=실제 표본 시각).
+        진행%는 슬라이더 위치(bar_time) 기준이라 항상 정수로 떨어진다. 시간 비활성이면 빈칸."""
         if not self._time_active:
             self.plainTextEdit_timestamp.setPlainText("")
             return
+        hi = self.bar_time.maximum()
+        pct = round(100 * self.bar_time.value() / hi) if hi else 0
         self.plainTextEdit_timestamp.setPlainText(
-            f"{self._fmt_time(self._current_sample_time())} / {self._fmt_time(self._t1)}")
+            f"{self._fmt_time(self._current_sample_time())} / {self._fmt_time(self._t1)} ({pct}%)")
 
     def _fmt_time(self, t):
         if t is None or not math.isfinite(t):
@@ -902,6 +1024,15 @@ class GraphWindow(QWidget, Ui_GraphForm):
         pts = np.column_stack((X[idx], Y[idx], Z[idx]))
         return pts[np.isfinite(pts).all(axis=1)]
 
+    def _stack_rows(self, X, Y, Z, idxs):
+        """_stack 과 동일하되 살아남은 '원본 행'도 함께 반환 → (pts, rows). 마커 행(락온) 식별용."""
+        idx = np.asarray(idxs, dtype=int)
+        if idx.size == 0:
+            return np.empty((0, 3)), idx
+        pts = np.column_stack((X[idx], Y[idx], Z[idx]))
+        m = np.isfinite(pts).all(axis=1)
+        return pts[m], idx[m]
+
     def _clear_lines(self):
         for it in self._line_items:
             self.graph_area.removeItem(it)
@@ -961,6 +1092,15 @@ class GraphWindow(QWidget, Ui_GraphForm):
                 self._combo_col(self.combo_y),
                 self._combo_col(self.combo_z))
 
+    def _update_gizmo_visibility(self, *cols):
+        """방향 gizmo 는 x/y/z 중 1개라도 선택됐을 때만 표시(전부 '(none)'이면 숨김).
+        cols 를 안 주면 현재 콤보에서 읽는다(_setup_gizmo 초기화용)."""
+        giz = getattr(self, "_gizmo", None)
+        if giz is None:
+            return
+        cx, cy, cz = cols if cols else self._axis_cols()
+        giz.setVisible(cx >= 0 or cy >= 0 or cz >= 0)
+
     def _visible_groups(self):
         """그릴 (트랙값, 색) 쌍 — 트랙 열이 있으면 보이는 트랙만, 없으면 단일 그룹(None)."""
         if self._track_rows:
@@ -994,10 +1134,11 @@ class GraphWindow(QWidget, Ui_GraphForm):
         cx, cy, cz = self._axis_cols()
         self._clear_lines()
         self._drawn_tracks = []         # 호버 피킹용 — 이번에 '솔리드'로 그린 트랙별 idx 기록
+        self._marker_info = {}          # 락온 추종용 — 트랙별 (마커 좌표, 마커 행). trail 에서만 채움
         self._hover_dirty = True        # 그린 점이 바뀌었으니 호버 인덱스는 다음 호버 때 재구성
         if (cx < 0 and cy < 0 and cz < 0) or not self.rows:
             self._update_markers([], [])
-            self._hide_hover()
+            self._release_lock()        # 그릴 축이 없으면 락 대상도 사라짐 → 해제
             return []
         # 고른 축은 그 축의 [min,max] 범위로 [0,AXIS_LEN] 정규화, 안 고른 축은 0(그 차원 납작).
         X = self._norm_axis(0, cx)
@@ -1023,12 +1164,13 @@ class GraphWindow(QWidget, Ui_GraphForm):
                 if k <= 0:                      # 첫 표본 시각보다 이르면 ghost 만(자취/마커 없음)
                     continue
                 drawn = idx_arr[:k]
-                pts = self._stack(X, Y, Z, drawn)
+                pts, prows = self._stack_rows(X, Y, Z, drawn)
                 if len(pts):
                     self._add_line(pts, color)
                     self._drawn_tracks.append((value, color, drawn))
                     mk_pts.append(pts[-1])      # 현재 위치 = T 이하 마지막 유한 점
                     mk_cols.append(color)
+                    self._marker_info[value] = (pts[-1], int(prows[-1]))   # 락온 추종(마커 좌표·행)
             else:                               # 전체 모드 — 궤적 전부(마커 없음)
                 pts = self._stack(X, Y, Z, idx_arr)
                 if len(pts):
@@ -1036,6 +1178,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
                     self._drawn_tracks.append((value, color, idx_arr))
                     all_pts.append(pts)
         self._update_markers(mk_pts, mk_cols)
+        self._refresh_lock()                    # 마커가 갱신됐으니 락온 오버레이/링도 따라 갱신
         return all_pts
 
     def _redraw(self, *_):
@@ -1043,6 +1186,8 @@ class GraphWindow(QWidget, Ui_GraphForm):
         if self._loading:
             return
         cx, cy, cz = self._axis_cols()
+        # 방향 gizmo 는 축이 1개라도 선택됐을 때만 보인다(전부 '(none)'이면 숨김).
+        self._update_gizmo_visibility(cx, cy, cz)
         # 축을 1개 이상 골라야 그린다 (1개=1차원·2개=2차원·3개=3차원).
         if (cx < 0 and cy < 0 and cz < 0) or not self.rows:
             self._clear_lines()
@@ -1053,8 +1198,9 @@ class GraphWindow(QWidget, Ui_GraphForm):
             self._marker_label.setVisible(False)
             self._tick_dots.setVisible(False)
             self._drawn_tracks = []
+            self._marker_info = {}
             self._hover_dirty = True
-            self._hide_hover()
+            self._release_lock()
             return
         self._draw_lines_and_markers()
         self._frame_scene((cx >= 0, cy >= 0, cz >= 0))
@@ -1127,23 +1273,32 @@ class GraphWindow(QWidget, Ui_GraphForm):
             self.graph_area.setCameraPosition(elevation=elev, azimuth=azim)
             self._last_sel = sel
         self._base_distance = diag * self.CAMERA_DISTANCE_FACTOR   # 줌 배율 기준(눈금 세분용)
+        self.graph_area.opts['fov'] = self._base_fov               # Ctrl+휠로 바뀐 fov 줌도 기본으로 복귀(거리 리셋과 대칭)
         self.graph_area.setCameraPosition(distance=self._base_distance)
 
     def _rebuild_tick_dots(self, sel):
         """선택된 축의 nice 눈금 위치마다 작은 점을 찍는다(숫자 라벨과 동일 위치). 줌 재계산에도 재사용."""
         dots = []
+        colors = []
+        sizes = []
         for i in range(3):
             if not sel[i]:
                 continue
-            for tpos, _val in self._nice_axis_ticks(i)[0]:
+            for tpos, val in self._nice_axis_ticks(i)[0]:
                 p = [0.0, 0.0, 0.0]
                 p[i] = tpos
                 dots.append(p)
+                if val == 0:                          # 원점 눈금 점 강조(크게+흰색)
+                    colors.append(self.ZERO_DOT_COLOR)
+                    sizes.append(self.ZERO_DOT_SIZE)
+                else:
+                    colors.append(self.TICK_DOT_COLOR)
+                    sizes.append(self.TICK_DOT_SIZE)
         if dots:
             arr = np.array(dots, dtype=float)
             self._tick_dots.setData(pos=arr,
-                                    color=np.tile(self.TICK_DOT_COLOR, (len(arr), 1)),
-                                    size=self.TICK_DOT_SIZE, pxMode=True)
+                                    color=np.array(colors, dtype=float),
+                                    size=np.array(sizes, dtype=float), pxMode=True)
             self._tick_dots.setVisible(True)
         else:
             self._tick_dots.setVisible(False)
@@ -1156,16 +1311,22 @@ class GraphWindow(QWidget, Ui_GraphForm):
             self._retick()
 
     def _apply_tick_density(self):
-        """현재 카메라 거리 ÷ 기본 거리로 줌 배율을 구해 눈금 target 을 갱신. 확대(거리↓)면 배율>1 →
-        target 을 키워(=간격 세분) 2배 확대 시 약 절반 간격. **딱 2단계만**: 배율을 [1,2]로 클램프해
-        2배 이상 확대해도 더는 세분되지 않고(4·8배 X), 축소는 기본(1)까지만(그 아래로 안 성김).
-        target 이 실제로 바뀌었으면 True(다시 그릴 필요)."""
+        """현재 줌 배율을 구해 눈금 target 을 갱신. 확대면 배율>1 → target 을 키워(=간격 세분) 2배
+        확대 시 약 절반 간격. **딱 2단계만**: 배율을 [1,2]로 클램프해 2배 이상 확대해도 더는 세분되지
+        않고(4·8배 X), 축소는 기본(1)까지만(그 아래로 안 성김). target 이 실제로 바뀌었으면 True.
+        ⚠ 줌 배율 = 거리 줌 × fov 줌. 평범한 휠은 거리(distance)를, Ctrl+휠은 fov(시야각)를 줄여
+          확대하므로 둘 다 곱해야 Ctrl 줌에서도 눈금이 세분된다. fov 의 화면 배율 기여는
+          tan(fov/2) 에 반비례(원근투영)라 tan(base/2)/tan(cur/2)."""
         if not self._base_distance:
             return False
         cur = self.graph_area.opts.get('distance')
         if not cur:
             return False
-        ratio = min(2.0, max(1.0, self._base_distance / cur))   # 1배(기본)~2배까지만 세분
+        cur_fov = self.graph_area.opts.get('fov') or self._base_fov
+        fov_ratio = (math.tan(math.radians(self._base_fov) / 2.0)
+                     / math.tan(math.radians(cur_fov) / 2.0))
+        zoom = (self._base_distance / cur) * fov_ratio
+        ratio = min(2.0, max(1.0, zoom))   # 1배(기본)~2배까지만 세분
         new_target = self.TICK_COUNT_TARGET * ratio
         if abs(new_target - self._tick_target) < 1e-6:
             return False
@@ -1182,9 +1343,15 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._rebuild_tick_dots(sel)
 
     def _add_axis_labels(self, sel, L):
-        """선택된 축마다 눈금 숫자(0..AXIS_TICKS 등간격, 각 위치의 실제 값)와 축 이름(x/y/z)을
-        GLTextItem 으로 그린다. (GLTextItem 미지원 빌드면 통째 생략.)"""
+        """선택된 축마다 눈금 숫자(0..AXIS_TICKS 등간격, 각 위치의 실제 값)·축 이름(x/y/z, 끝점)·
+        선택 열 이름(축 가운데에서 큐브 바깥쪽) 라벨을 GLTextItem 으로 그린다.
+        (GLTextItem 미지원 빌드면 통째 생략.)"""
         names = ("x", "y", "z")
+        cols = self._axis_cols()                       # 축별 소스 열(sel[i] 면 >= 0)
+        # 큐브 중심 — 열 이름 라벨을 '바깥쪽'(중심 반대 방향)으로 밀 때 기준. 선택 안 한 축은 0 평면.
+        center = [(L / 2.0 if sel[k] else 0.0) for k in range(3)]
+        # 1축(가운데==중심이라 바깥방향이 0 벡터)일 때 폴백 방향: x·y=화면 아래(-z), z=화면 왼쪽(-x).
+        fallback_out = {0: (0.0, 0.0, -1.0), 1: (0.0, 0.0, -1.0), 2: (-1.0, 0.0, 0.0)}
         try:
             for i in range(3):
                 if not sel[i]:
@@ -1193,19 +1360,41 @@ class GraphWindow(QWidget, Ui_GraphForm):
                 for tpos, val in ticks:
                     pos = [0.0, 0.0, 0.0]
                     pos[i] = tpos
+                    is_zero = (val == 0)               # 원점 눈금 강조(밝은 흰색 — 볼드는 취소)
                     t = _TickText(pos=np.array(pos, dtype=float),
-                                  text=format_tick_value(val, step), color=QColor(170, 170, 170),
+                                  text=format_tick_value(val, step),
+                                  color=(QColor(*self.ZERO_LABEL_COLOR) if is_zero
+                                         else QColor(170, 170, 170)),
                                   font=self._tick_font,
                                   screen_offset=self.TICK_LABEL_OFFSET[i], angle=30.0)
                     self.graph_area.addItem(t)
                     self._labels.append(t)
-                # 축 이름 — 눈금 너머 끝점에.
+                # 축 이름 — 눈금 너머 끝점에(x/y/z 방향 식별용).
                 pos = [0.0, 0.0, 0.0]
                 pos[i] = L * 1.08
                 t = gl.GLTextItem(pos=np.array(pos, dtype=float),
                                   text=names[i], color=QColor(230, 230, 230))
                 self.graph_area.addItem(t)
                 self._labels.append(t)
+                # 선택 열 이름 — 축 가운데(L/2)에서 큐브 중심 반대 방향으로 밀어 축 바깥쪽에 배치.
+                mid = [0.0, 0.0, 0.0]
+                mid[i] = L / 2.0
+                out = [mid[k] - center[k] for k in range(3)]
+                norm = math.sqrt(sum(c * c for c in out))
+                if norm < 1e-6:                        # 1축 — 바깥방향이 0 → 폴백
+                    out = list(fallback_out[i])
+                    norm = 1.0
+                m = self.AXIS_TITLE_OFFSET_FRAC * L
+                title_pos = [mid[k] + out[k] / norm * m for k in range(3)]
+                axis_dir = [0.0, 0.0, 0.0]     # 이 축 방향(글자가 나란히 눕는 기준)
+                axis_dir[i] = 1.0
+                tt = _AxisTitleText(axis_dir=axis_dir,
+                                    pos=np.array(title_pos, dtype=float),
+                                    text=self._header_name(cols[i]),
+                                    color=QColor(*self.AXIS_TITLE_COLOR),
+                                    font=self._title_font)
+                self.graph_area.addItem(tt)
+                self._labels.append(tt)
         except Exception:
             pass
 
@@ -1215,7 +1404,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
         sx, sy, sz = sel
         dim = sx + sy + sz
         if dim >= 3:
-            return 5, -60, False            # 자유 회전
+            return 15, 15, False            # 자유 회전
         if dim == 2:
             if sx and sy:
                 return 90, -90, True         # XY 평면(top view) — X축 끝 오른쪽·Y축 끝 위
@@ -1240,8 +1429,8 @@ class GraphWindow(QWidget, Ui_GraphForm):
         btn.setGeometry(x, y, side, side)        # 클릭 영역 = gizmo 전체
         self._gizmo = _AxisGizmo(self.graph_area, self.graph_area)
         self._gizmo.setGeometry(x, y, side, side)
-        self._gizmo.raise_()                     # gizmo 가 위(항상 보임), 클릭은 투과해 버튼이 받음
-        self._gizmo.show()
+        self._gizmo.raise_()                     # gizmo 가 위(보일 때), 클릭은 투과해 버튼이 받음
+        self._update_gizmo_visibility()          # 시작은 전부 '(none)' → 숨김(축 고르면 _redraw 가 켬)
         # ⚠ 갱신은 GL 위젯의 frameSwapped(매 프레임 swap 후 발생)에 묶는다 — 드래그 회전·휠·
         #   setCameraPosition 등 카메라가 바뀌면 GL 이 반드시 재렌더하므로, 출처와 무관하게 gizmo 가
         #   '항상 화면과 동일한 카메라'로 다시 그려진다. (마우스 이벤트만 후킹하면 일부 경로에서
@@ -1262,21 +1451,46 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._hover_values = []          # tid -> 트랙 값(트랙 열 없으면 [None])
         self._hover_cols = (-1, -1, -1)  # 인덱스 만들 당시 (x,y,z) 소스 열
         self._seg_a = self._seg_b = self._seg_tid = None   # 선 피킹용 세그먼트 양끝 인덱스 + 트랙 id
+        self._marker_info = {}           # 트랙값 -> (마커 정규화좌표, 마커 원본행) — 락온 추종용(매 draw 갱신)
+        # 락온(클릭 고정) 상태 — None=해제 / {'mode':'marker','track':v}(자취: 마커 추종) /
+        #   {'mode':'point','track':v,'row':r}(전체: 행 고정). 클릭 vs 드래그 구분용 press 기록도.
+        self._lock = None
+        self._lock_pt_cache = None       # 마지막으로 링에 박은 좌표(프레임 swap 재귀 setData 방지)
+        self._press_pos = None
+        self._press_moved = False
         # 커서 옆 다크 오버레이 라벨(마우스 투과 → 호버 자체를 안 가림). gizmo 처럼 코드로만 생성.
+        # 호버(회색)·락온(앰버) 라벨을 별도로 둬 락온 유지 중에도 호버 정보를 동시에 띄운다.
         lbl = QLabel(self.graph_area)
         lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         lbl.setFont(QFont("Consolas", 9))
-        lbl.setStyleSheet(
-            "QLabel { background-color: rgba(18,18,18,225); color: rgb(235,235,235);"
-            " border: 1px solid rgb(95,95,95); border-radius: 4px; padding: 4px 7px; }")
+        lbl.setStyleSheet(self._HOVER_QSS)
         lbl.hide()
         self._hover_label = lbl
+        lock_lbl = QLabel(self.graph_area)
+        lock_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        lock_lbl.setFont(QFont("Consolas", 9))
+        lock_lbl.setStyleSheet(self._LOCK_QSS)
+        lock_lbl.hide()
+        self._lock_label = lock_lbl
         # 버튼 없이도 이동 이벤트가 오게(호버) + 창 떠날 때 숨김. leaveEvent 도 인스턴스 교체(mouseMove 패턴).
         self.graph_area.setMouseTracking(True)
         self._gl_orig_leave = self.graph_area.leaveEvent
         self.graph_area.leaveEvent = self._gl_leave
+        # 클릭(락온/해제) 판정 — press/release 후킹(클릭 vs 드래그 회전 구분은 이동량으로).
+        self._gl_orig_press = self.graph_area.mousePressEvent
+        self.graph_area.mousePressEvent = self._gl_mouse_press
+        self._gl_orig_release = self.graph_area.mouseReleaseEvent
+        self.graph_area.mouseReleaseEvent = self._gl_mouse_release
+        # 카메라가 돌면(frameSwapped) 락온 오버레이 위치를 다시 투영해 점에 붙여 따라가게 한다.
+        # (링은 GL 아이템이라 자동 추종 — pt 안 바뀌면 setData 안 함으로 재렌더 루프 방지.)
+        self.graph_area.frameSwapped.connect(self._refresh_lock)
 
     def _gl_mouse_move(self, ev):
+        # 버튼 누른 채 이동량이 임계를 넘으면 '드래그(회전)'로 표시(release 때 클릭 락온과 구분).
+        if ev.buttons() != Qt.MouseButton.NoButton and self._press_pos is not None:
+            d = ev.position() - self._press_pos
+            if d.x() ** 2 + d.y() ** 2 > self.CLICK_MOVE_TOL2:
+                self._press_moved = True
         # 호버 정보(툴팁/링)는 모든 시야 모드에서 동작 — 잠금/회전과 무관하게 먼저 갱신.
         self._update_hover(ev)
         # 시야 잠금(1·2축) 중엔 드래그 회전/pan 을 무시하고, 3축이면 원래 GLViewWidget 동작.
@@ -1285,16 +1499,40 @@ class GraphWindow(QWidget, Ui_GraphForm):
             return
         self._gl_orig_mouse_move(ev)
 
+    def _gl_mouse_press(self, ev):
+        # 좌클릭 시작 위치 기록(release 때 이동량이 작으면 '클릭'=락온/해제).
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = ev.position()
+            self._press_moved = False
+        self._gl_orig_press(ev)
+
+    def _gl_mouse_release(self, ev):
+        # 좌클릭이 '드래그가 아니었으면'(거의 안 움직임) 클릭으로 처리 → 락온/해제.
+        if (ev.button() == Qt.MouseButton.LeftButton
+                and self._press_pos is not None and not self._press_moved):
+            self._handle_click(ev.position())
+        self._press_pos = None
+        self._gl_orig_release(ev)
+
     def _gl_leave(self, ev):
-        # 커서가 그래프 영역을 떠나면 오버레이/링을 숨긴다.
+        # 커서가 그래프 영역을 떠나면 호버는 숨기고, 락온 오버레이(별도 위젯)는 점에 고정돼 유지된다.
         self._hide_hover()
         self._gl_orig_leave(ev)
 
     def _hide_hover(self):
-        if self._hover_label.isVisible():
+        # ⚠ 가드는 isVisible() 이 아니라 isHidden() 으로 — isVisible() 은 조상(창)이 hidden 이면
+        #   False 라, 창을 닫은 채 set_data(재오픈) → show 하는 경로에서 .hide() 가 스킵돼 낡은
+        #   오버레이가 되살아난다. isHidden() 은 위젯 자신의 명시적 숨김상태(조상 무관).
+        if not self._hover_label.isHidden():
             self._hover_label.hide()
         if self._hover_ring.visible():      # GLGraphicsItem 은 visible()(QWidget 의 isVisible 아님)
             self._hover_ring.setVisible(False)
+
+    def _hide_lock(self):
+        if not self._lock_label.isHidden():
+            self._lock_label.hide()
+        if self._lock_ring.visible():
+            self._lock_ring.setVisible(False)
 
     # ---------- 호버 피킹 (화면 투영 + 최근접) ----------
     def _ensure_hover_index(self):
@@ -1371,7 +1609,8 @@ class GraphWindow(QWidget, Ui_GraphForm):
         return px, py, valid
 
     def _update_hover(self, ev):
-        """마우스 위치에서 점/선을 피킹해 오버레이 라벨(+점이면 강조 링)을 띄운다."""
+        """마우스 위치에서 점/선을 피킹해 오버레이 라벨(+점이면 강조 링)을 띄운다.
+        락온 중에도 동작 — 호버(회색)와 락온(앰버)은 별도 위젯이라 동시에 뜬다."""
         if ev.buttons() != Qt.MouseButton.NoButton:   # 드래그(회전/팬) 중엔 호버 억제
             self._hide_hover()
             return
@@ -1397,7 +1636,9 @@ class GraphWindow(QWidget, Ui_GraphForm):
             value = self._hover_values[tid] if tid < len(self._hover_values) else None
             if value is not None:                     # 트랙 열 없으면(단일 궤적) 보여줄 트랙명 없음
                 self._hover_ring.setVisible(False)
-                self._show_overlay(f"Track: {value or '(empty)'}", mx, my)
+                kcol = self._combo_col(self.combo_track)   # 트랙 열 이름으로(고정 'Track' 아님)
+                kname = self._header_name(kcol) if kcol >= 0 else "Track"
+                self._show_overlay(f"{kname}: {value or '(empty)'}", mx, my)
                 return
         self._hide_hover()
 
@@ -1435,22 +1676,34 @@ class GraphWindow(QWidget, Ui_GraphForm):
         row = int(self._hover_rows[j])
         tid = int(self._hover_tid[j])
         value = self._hover_values[tid] if tid < len(self._hover_values) else None
-        cx, cy, cz = self._hover_cols
-        lines = []
-        lines.append(f"row: {row}")
-        if value is not None:
-            lines.append(f"Track: {value or '(empty)'}")
+        self._show_overlay(self._format_point_lines(row, value, self._hover_cols), mx, my)
+
+    def _header_name(self, col):
+        """열 인덱스 → 그 열의 헤더 이름(범위 밖이면 인덱스 문자열)."""
+        return str(self.headers[col]) if 0 <= col < len(self.headers) else str(col)
+
+    def _format_point_lines(self, row, value, cols):
+        """한 점(원본 행)의 행번호/축 원본값/시간/트랙 텍스트(호버·락온 공용).
+        시간·트랙 라벨은 고정 't'/'Track' 이 아니라 combo_time/combo_track 에서 고른 '열 이름'을 쓴다."""
+        cx, cy, cz = cols
+        lines = [f"row: {row}"]
         for col in (cx, cy, cz):                       # 선택된 축의 '원본' 데이터 값(정규화 전)
             if col >= 0:
-                name = str(self.headers[col]) if col < len(self.headers) else str(col)
-                lines.append(f"{name}: {self._floats(col)[row]:g}")
+                lines.append(f"{self._header_name(col)}: {self._floats(col)[row]:g}")
         if self._time_active and self._time_values is not None:
-            lines.append(f"t: {self._fmt_time(float(self._time_values[row]))}")
-        self._show_overlay("\n".join(lines), mx, my)
+            tcol = self._combo_col(self.combo_time)    # 시간(seq) 열 — 활성이면 열 이름, 아니면 't'
+            tname = self._header_name(tcol) if tcol >= 0 else "t"
+            lines.append(f"{tname}: {self._fmt_time(float(self._time_values[row]))}")
+        if value is not None:
+            kcol = self._combo_col(self.combo_track)   # 트랙 열 — 열 이름으로(값이 있으면 열 선택됨)
+            kname = self._header_name(kcol) if kcol >= 0 else "Track"
+            lines.append(f"{kname}: {value or '(empty)'}")
+        return "\n".join(lines)
 
-    def _show_overlay(self, text, mx, my):
-        """커서 옆에 오버레이 라벨을 띄우되 그래프 영역 밖으로 안 나가게 클램프."""
-        lbl = self._hover_label
+    def _show_overlay(self, text, mx, my, locked=False):
+        """오버레이 라벨을 (mx,my) 옆에 띄우되 그래프 영역 밖으로 안 나가게 클램프.
+        locked=True 면 락온 전용 라벨(앰버), False 면 호버 라벨(회색) — 둘은 별도 위젯이라 동시에 뜬다."""
+        lbl = self._lock_label if locked else self._hover_label
         lbl.setText(text)
         lbl.adjustSize()
         gw, gh = self.graph_area.width(), self.graph_area.height()
@@ -1463,7 +1716,111 @@ class GraphWindow(QWidget, Ui_GraphForm):
             y = my - 16 - h
         lbl.move(int(max(0, x)), int(max(0, y)))
         lbl.show()
-        lbl.raise_()
+        # z-order: 흰색 호버 라벨이 앰버 락온 라벨보다 항상 위로 오게 한다(링 depth 와 동일 규칙).
+        if locked:
+            lbl.stackUnder(self._hover_label)      # 락온은 호버 라벨 아래로
+        else:
+            lbl.raise_()                            # 호버는 맨 위로
+
+    # ---------- 클릭 락온 (마커/점 고정 전시) ----------
+    def _handle_click(self, pos):
+        """클릭 위치에서 점을 피킹 — 맞으면 그 대상에 락온, 빈 곳이면 락 해제.
+        자취(시간 활성)면 'marker' 모드(그 트랙 마커를 재생 내내 추종), 전체면 'point' 모드(행 고정)."""
+        self._ensure_hover_index()
+        proj = self._project_screen()
+        hit = None
+        if proj is not None:
+            px, py, valid = proj
+            mx, my = pos.x(), pos.y()
+            if valid.any():
+                d2 = (px - mx) ** 2 + (py - my) ** 2
+                d2[~valid] = np.inf
+                j = int(np.argmin(d2))
+                if d2[j] <= self.PICK_RADIUS_PT ** 2:
+                    hit = j
+        if hit is None:                                # 빈 곳 클릭 → 해제
+            self._release_lock()
+            return
+        tid = int(self._hover_tid[hit])
+        value = self._hover_values[tid] if tid < len(self._hover_values) else None
+        row = int(self._hover_rows[hit])
+        if self._time_active:
+            self._lock = {"mode": "marker", "track": value}
+        else:
+            self._lock = {"mode": "point", "track": value, "row": row}
+        self._lock_pt_cache = None
+        self._refresh_lock()
+
+    def _release_lock(self):
+        if self._lock is not None:
+            self._lock = None
+            self._lock_pt_cache = None
+            self._hide_lock()
+
+    def _refresh_lock(self):
+        """락온 대상(마커=트랙 현재위치 / 점=고정 행)을 현재 카메라로 다시 투영해 오버레이+링을 갱신.
+        frameSwapped(카메라 변화)·매 draw(시간 변화)에서 호출. 링은 좌표가 바뀔 때만 setData(재렌더 루프 방지)."""
+        if self._lock is None:
+            return
+        value = self._lock["track"]
+        if self._lock["mode"] == "marker":
+            info = self._marker_info.get(value)
+            if info is None:                           # 마커가 현재 없음(미등장/숨김) → 표시만 숨기고 락 유지
+                self._hide_lock()
+                self._lock_pt_cache = None
+                return
+            pt, row = info
+        else:                                          # point — 행 고정, 현재 정규화 좌표로 재계산
+            row = self._lock["row"]
+            cx, cy, cz = self._axis_cols()
+            x = self._norm_one(0, cx, row)
+            y = self._norm_one(1, cy, row)
+            z = self._norm_one(2, cz, row)
+            if x is None or y is None or z is None:    # 범위 밖/비유한 → 숨김(락 유지)
+                self._hide_lock()
+                self._lock_pt_cache = None
+                return
+            pt = np.array([x, y, z], dtype=float)
+        # 링: 좌표가 바뀐 경우에만 setData(setData→repaint→frameSwapped→여기 재진입 무한루프 방지).
+        if self._lock_pt_cache is None or not np.array_equal(pt, self._lock_pt_cache):
+            self._lock_ring.setData(pos=np.array([pt], dtype=float),
+                                    color=self.LOCK_RING_COLOR,
+                                    size=self.HOVER_RING_SIZE, pxMode=True)
+            self._lock_ring.setVisible(True)
+            self._lock_pt_cache = pt
+        # 오버레이: 점의 화면 투영 위치로 이동(커서가 아니라 '점'에 붙어 따라감).
+        scr = self._project_one(pt)
+        if scr is None:
+            self._lock_label.hide()
+            return
+        self._show_overlay(self._format_point_lines(row, value, self._axis_cols()),
+                           scr[0], scr[1], locked=True)
+
+    def _norm_one(self, axis, col, row):
+        """한 행(row)의 한 축 값을 정규화 좌표로(축 미선택=0, 범위없음/비유한=None)."""
+        if col < 0:
+            return 0.0
+        rng = self._axis_range.get(axis)
+        if rng is None:
+            return None
+        v = self._floats(col)[row]
+        if not np.isfinite(v):
+            return None
+        vmin, vmax = rng
+        span = (vmax - vmin) or 1.0
+        return float(self._axis_pos((v - vmin) / span))
+
+    def _project_one(self, pt):
+        """한 점(정규화 좌표)을 현재 카메라로 화면 픽셀 (x,y) 로. 카메라 뒤(w<=0)/실패면 None."""
+        try:
+            tr = self._marker_label.compute_projection()
+        except Exception:
+            return None
+        mat = np.array(tr.data(), dtype=float).reshape(4, 4)
+        h = np.array([pt[0], pt[1], pt[2], 1.0]) @ mat
+        if h[3] <= 1e-6:
+            return None
+        return (h[0] / h[3], h[1] / h[3])
 
     def _update_markers(self, pts, colors):
         """트랙별 '현재 위치' 마커를 각 트랙 색으로 한 번에 찍는다(GLScatterPlotItem 1개에 N점).
@@ -1483,6 +1840,7 @@ class GraphWindow(QWidget, Ui_GraphForm):
     def _on_track_column_changed(self, *_):
         if self._loading:
             return
+        self._release_lock()           # 트랙 그룹이 바뀌면 락 대상이 사라질 수 있음 → 해제
         self._build_track_list()
         self._rebuild_track_order()    # 트랙 그룹 바뀜 → 시간 정렬 캐시 갱신
         self._redraw()
@@ -1504,21 +1862,28 @@ class GraphWindow(QWidget, Ui_GraphForm):
         scale = img.width() / max(1, area.width())
         img.setDevicePixelRatio(scale)
         painter = QPainter(img)
-        for child in (getattr(self, "_gizmo", None), getattr(self, "_hover_label", None)):
+        for child in (getattr(self, "_gizmo", None), getattr(self, "_hover_label", None),
+                      getattr(self, "_lock_label", None)):
             if child is not None and child.isVisible():
                 painter.drawPixmap(child.pos(), child.grab())
         painter.end()
         return img
 
     def save_graph_image(self):
-        """Ctrl+S — 현재 그래프 화면을 PNG 파일로 저장(파일 선택창)."""
+        """Ctrl+S — 현재 그래프 화면을 PNG 파일로 저장(파일 선택창).
+        기본 파일명 = `<폴더명>-<csv명>`(예: 250503_124533-EIE_0x0306), 저장창 시작경로 = 그 CSV 폴더."""
         img = self._grab_graph_image()
         if img.isNull():
             self._show_toast("Capture failed!", success=False)
             return
-        base = re.sub(r'[\\/:*?"<>|]', "_", (self._title or "graph").strip()) or "graph"
+        folder_name = os.path.basename(self._folder_path) if self._folder_path else ""
+        parts = [p for p in (folder_name, self._title) if p]      # 빈 조각은 빼 트레일링 '-' 방지
+        stem = re.sub(r'[\\/:*?"<>|]', "_", "-".join(parts)) or "graph"
+        default = stem + ".png"
+        if self._folder_path and os.path.isdir(self._folder_path):  # 저장창을 CSV 폴더에서 시작
+            default = os.path.join(self._folder_path, default)
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Graph Image", base + "_graph.png",
+            self, "Save Graph Image", default,
             "PNG Image (*.png);;JPEG Image (*.jpg);;All Files (*)")
         if not path:
             return
@@ -1564,17 +1929,38 @@ class GraphWindow(QWidget, Ui_GraphForm):
         self._track_color = {}
         self._track_visible = {}
         self._track_cb = {}
+        self._track_master_cb = None
+        # 새 트랙 열 = 새 값들 → 검색어 초기화(필터 트리거 없이 비운다).
+        self.lineEdit_track_search.blockSignals(True)
+        self.lineEdit_track_search.clear()
+        self.lineEdit_track_search.blockSignals(False)
         c = self._combo_col(self.combo_track)
         if c < 0 or not self.rows:
+            self.lineEdit_track_search.setEnabled(False)   # 트랙 열 없음 → 검색 무의미
             return
         groups = group_indices_by(self.rows, c)
         values = sorted(groups.keys(), key=_filter_sort_key)
         if len(values) > self.MAX_TRACKS:
             # 고유값이 너무 많음 → 분리 궤적/목록 생략(단일 궤적으로 폴백) + 안내
+            self.lineEdit_track_search.setEnabled(False)
             self._add_track_notice(
                 f"{len(values)} groups — too many to split.\n"
                 f"Pick a lower-cardinality column\n(≤ {self.MAX_TRACKS}).")
             return
+        self.lineEdit_track_search.setEnabled(True)
+        # (Select All) 마스터 체크박스 — dialog_filter 의 master_checkbox 와 동일. 3-state 로
+        # '보이는(검색 통과)' 항목 전체를 켜고/끈다. clicked(사용자 클릭)만 처리해 프로그램적
+        # setCheckState 재귀를 피한다. 목록 맨 위 행으로 둔다(스크롤되면 함께 스크롤).
+        # ⚠ 빌드 직후 전 트랙이 체크·검색 없음이 자명하므로 마스터도 Checked 로 '직접' 세팅한다.
+        #   _refresh_track_master() 로 계산시키면 안 된다 — 이 시점의 행들은 아직 show 전이라
+        #   _row.isHidden() 이 일시적으로 True(→ '보이는 항목 0개' 오판)라 Unchecked 로 잘못 잡힌다.
+        master = QCheckBox("(Select All)")
+        master.setTristate(True)
+        master.setCheckState(Qt.CheckState.Checked)
+        master.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        master.clicked.connect(self._track_master_clicked)
+        self._track_master_cb = master
+        self.verticalLayout.addWidget(master)
         for i, v in enumerate(values):
             color = track_color(i)
             self._track_rows[v] = groups[v]
@@ -1597,9 +1983,12 @@ class GraphWindow(QWidget, Ui_GraphForm):
                 lambda _c, val=v, b=color_btn: self._pick_track_color(val, b))
 
             row = _FilterItemRow(cb, color_btn)
+            cb._row = row                    # 검색/마스터가 이 행의 가시성으로 '보이는' 항목 판정
             self.verticalLayout.addWidget(row)
             self._track_cb[v] = cb
         self.verticalLayout.addStretch(1)
+        # (마스터는 위에서 Checked 로 직접 세팅함 — 여기서 _refresh_track_master 를 부르면 위 함정으로
+        #  Unchecked 로 오판되므로 부르지 않는다. 이후 개별 토글/검색에서만 재계산한다.)
 
     def _clear_track_list(self):
         while self.verticalLayout.count():
@@ -1620,7 +2009,56 @@ class GraphWindow(QWidget, Ui_GraphForm):
         cb = self._track_cb.get(value)
         if cb is not None:
             self._track_visible[value] = cb.isChecked()
+            self._refresh_track_master()     # 개별 변경 → (Select All) 3-state 갱신
             self._redraw()
+
+    def _visible_track_checkboxes(self):
+        """검색으로 숨겨지지 않은(=목록에 보이는) 트랙 체크박스 목록.
+        마스터/검색이 대상으로 삼는 '보이는' 항목(dialog_filter._refresh_master 와 동일 판정)."""
+        return [cb for cb in self._track_cb.values() if not cb._row.isHidden()]
+
+    def _refresh_track_master(self):
+        """(Select All) 표시를 '보이는' 트랙 체크 상태 기준 3-state 로 갱신.
+        전부 체크=Checked / 일부=PartiallyChecked / 없음=Unchecked."""
+        master = self._track_master_cb
+        if master is None:
+            return
+        visible = self._visible_track_checkboxes()
+        n_checked = sum(cb.isChecked() for cb in visible)
+        if not visible or n_checked == 0:
+            state = Qt.CheckState.Unchecked
+        elif n_checked == len(visible):
+            state = Qt.CheckState.Checked
+        else:
+            state = Qt.CheckState.PartiallyChecked
+        master.blockSignals(True)
+        master.setCheckState(state)
+        master.blockSignals(False)
+
+    def _track_master_clicked(self, _checked=False):
+        """(Select All) 클릭 → '보이는' 트랙 전체를 켜거나 끈다(하나라도 꺼져 있으면 전체 ON,
+        전부 켜져 있으면 전체 OFF). 개별 시그널은 막고 마지막에 한 번만 재그린다(N번 redraw 방지)."""
+        visible = [(v, self._track_cb[v]) for v in self._track_cb
+                   if not self._track_cb[v]._row.isHidden()]
+        if not visible:
+            return
+        target = not all(cb.isChecked() for _v, cb in visible)
+        for v, cb in visible:
+            cb.blockSignals(True)
+            cb.setChecked(target)
+            cb.blockSignals(False)
+            self._track_visible[v] = target
+        self._refresh_track_master()
+        self._redraw()
+
+    def _filter_track_items(self, text):
+        """검색어와 부분일치(대소문자 무시)하는 트랙 행만 표시 + 마스터 갱신.
+        숨김은 '목록 표시'만 바꾸고 트랙의 그래프 가시성(_track_visible)은 건드리지 않는다
+        (dialog_filter 와 동일 — 검색은 필터가 아니라 목록 좁히기)."""
+        keyword = text.strip().lower()
+        for cb in self._track_cb.values():
+            cb._row.setVisible(keyword in cb.text().lower())
+        self._refresh_track_master()
 
     def _pick_track_color(self, value, btn):
         initial = QColor.fromRgbF(*self._track_color.get(value, self.DEFAULT_COLOR))

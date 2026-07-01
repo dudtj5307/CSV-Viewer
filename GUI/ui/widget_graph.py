@@ -35,8 +35,8 @@ class Ui_GraphForm(object):
         self.frame_1.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         self.frame_1.setObjectName("frame_1")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.frame_1)
-        self.horizontalLayout_2.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout_2.setSpacing(0)
+        self.horizontalLayout_2.setContentsMargins(3, 3, 3, 3)
+        self.horizontalLayout_2.setSpacing(3)
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
         self.graph_area = GLViewWidget(parent=self.frame_1)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
@@ -44,12 +44,9 @@ class Ui_GraphForm(object):
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.graph_area.sizePolicy().hasHeightForWidth())
         self.graph_area.setSizePolicy(sizePolicy)
-        self.graph_area.setStyleSheet("GLViewWidget#graph_area {\n"
-"    border-radius: 3px;\n"
-"}")
         self.graph_area.setObjectName("graph_area")
         self.button_graph_reset = QtWidgets.QPushButton(parent=self.graph_area)
-        self.button_graph_reset.setGeometry(QtCore.QRect(10, 10, 31, 31))
+        self.button_graph_reset.setGeometry(QtCore.QRect(3, 3, 51, 51))
         font = QtGui.QFont()
         font.setFamily("Arial")
         font.setPointSize(10)
@@ -57,15 +54,28 @@ class Ui_GraphForm(object):
         font.setItalic(True)
         self.button_graph_reset.setFont(font)
         self.button_graph_reset.setStyleSheet("QPushButton {\n"
-"    background-color: rgba(253, 253, 253,0);\n"
-"    border: 0px solid;\n"
+"    background-color: rgba(253, 253, 253, 0);\n"
+"    border: 0px;\n"
+"    border-radius: 4px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    background-color: rgba(200, 200, 200, 100);\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: rgba(100, 100, 100, 100);\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
 "}")
         self.button_graph_reset.setText("")
         self.button_graph_reset.setObjectName("button_graph_reset")
         self.horizontalLayout_2.addWidget(self.graph_area)
         self.horizontalLayout.addWidget(self.frame_1)
         self.frame_2 = QtWidgets.QFrame(parent=GraphForm)
-        self.frame_2.setMinimumSize(QtCore.QSize(250, 0))
+        self.frame_2.setMinimumSize(QtCore.QSize(270, 0))
         self.frame_2.setStyleSheet("QFrame#frame_2 {\n"
 "    background-color: rgb(200, 200, 200);\n"
 "    border-radius: 4px;\n"
@@ -74,26 +84,26 @@ class Ui_GraphForm(object):
         self.frame_2.setFrameShadow(QtWidgets.QFrame.Shadow.Raised)
         self.frame_2.setObjectName("frame_2")
         self.button_x = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_x.setGeometry(QtCore.QRect(17, 17, 61, 25))
+        self.button_x.setGeometry(QtCore.QRect(9, 40, 23, 23))
         font = QtGui.QFont()
         font.setFamily("Arial")
-        font.setPointSize(10)
+        font.setPointSize(9)
         font.setBold(True)
         font.setItalic(True)
         self.button_x.setFont(font)
         self.button_x.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
-"    border: 2px solid rgb(100, 100, 100);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
 "    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
 "    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "}\n"
 "\n"
 "QPushButton:disabled {\n"
@@ -101,26 +111,26 @@ class Ui_GraphForm(object):
 "}")
         self.button_x.setObjectName("button_x")
         self.button_y = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_y.setGeometry(QtCore.QRect(17, 79, 61, 25))
+        self.button_y.setGeometry(QtCore.QRect(9, 72, 23, 23))
         font = QtGui.QFont()
         font.setFamily("Arial")
-        font.setPointSize(10)
+        font.setPointSize(9)
         font.setBold(True)
         font.setItalic(True)
         self.button_y.setFont(font)
         self.button_y.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
-"    border: 2px solid rgb(100, 100, 100);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
 "    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
 "    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "}\n"
 "\n"
 "QPushButton:disabled {\n"
@@ -128,26 +138,26 @@ class Ui_GraphForm(object):
 "}")
         self.button_y.setObjectName("button_y")
         self.button_z = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_z.setGeometry(QtCore.QRect(17, 141, 61, 25))
+        self.button_z.setGeometry(QtCore.QRect(9, 104, 23, 23))
         font = QtGui.QFont()
         font.setFamily("Arial")
-        font.setPointSize(10)
+        font.setPointSize(9)
         font.setBold(True)
         font.setItalic(True)
         self.button_z.setFont(font)
         self.button_z.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
-"    border: 2px solid rgb(100, 100, 100);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
 "    border-radius: 4px;\n"
 "}\n"
 "\n"
 "QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
+"    border: 1px solid #333;\n"
 "}\n"
 "\n"
 "QPushButton:pressed {\n"
 "    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
+"     border: 1px solid #000;\n"
 "}\n"
 "\n"
 "QPushButton:disabled {\n"
@@ -155,69 +165,120 @@ class Ui_GraphForm(object):
 "}")
         self.button_z.setObjectName("button_z")
         self.combo_x = QtWidgets.QComboBox(parent=self.frame_2)
-        self.combo_x.setGeometry(QtCore.QRect(81, 16, 151, 28))
+        self.combo_x.setGeometry(QtCore.QRect(33, 39, 95, 25))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.combo_x.setFont(font)
         self.combo_x.setStyleSheet("QComboBox {\n"
 "    padding-left: 4px;\n"
 "}")
         self.combo_x.setObjectName("combo_x")
         self.combo_y = QtWidgets.QComboBox(parent=self.frame_2)
-        self.combo_y.setGeometry(QtCore.QRect(81, 78, 151, 28))
+        self.combo_y.setGeometry(QtCore.QRect(33, 71, 95, 25))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.combo_y.setFont(font)
         self.combo_y.setStyleSheet("QComboBox {\n"
 "    padding-left: 4px;\n"
 "}")
         self.combo_y.setCurrentText("")
         self.combo_y.setObjectName("combo_y")
         self.combo_z = QtWidgets.QComboBox(parent=self.frame_2)
-        self.combo_z.setGeometry(QtCore.QRect(81, 140, 151, 28))
+        self.combo_z.setGeometry(QtCore.QRect(33, 103, 95, 25))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.combo_z.setFont(font)
         self.combo_z.setStyleSheet("QComboBox {\n"
 "    padding-left: 4px;\n"
 "}")
         self.combo_z.setObjectName("combo_z")
         self.combo_time = QtWidgets.QComboBox(parent=self.frame_2)
-        self.combo_time.setGeometry(QtCore.QRect(81, 472, 151, 28))
+        self.combo_time.setGeometry(QtCore.QRect(91, 408, 151, 28))
         self.combo_time.setStyleSheet("QComboBox {\n"
 "    padding-left: 4px;\n"
 "}")
         self.combo_time.setObjectName("combo_time")
         self.button_time = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_time.setGeometry(QtCore.QRect(17, 473, 61, 25))
+        self.button_time.setGeometry(QtCore.QRect(27, 409, 61, 25))
         font = QtGui.QFont()
         font.setFamily("Arial")
-        font.setPointSize(10)
+        font.setPointSize(9)
         font.setBold(True)
         font.setItalic(True)
         self.button_time.setFont(font)
         self.button_time.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
 "    border-radius: 4px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
 "}")
         self.button_time.setObjectName("button_time")
         self.bar_time = QtWidgets.QSlider(parent=self.frame_2)
         self.bar_time.setEnabled(True)
-        self.bar_time.setGeometry(QtCore.QRect(18, 503, 215, 20))
+        self.bar_time.setGeometry(QtCore.QRect(28, 439, 215, 20))
+        palette = QtGui.QPalette()
+        brush = QtGui.QBrush(QtGui.QColor(37, 40, 200))
+        brush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
+        palette.setBrush(QtGui.QPalette.ColorGroup.Active, QtGui.QPalette.ColorRole.Accent, brush)
+        brush = QtGui.QBrush(QtGui.QColor(37, 40, 200))
+        brush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
+        palette.setBrush(QtGui.QPalette.ColorGroup.Inactive, QtGui.QPalette.ColorRole.Accent, brush)
+        brush = QtGui.QBrush(QtGui.QColor(37, 40, 200))
+        brush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
+        palette.setBrush(QtGui.QPalette.ColorGroup.Disabled, QtGui.QPalette.ColorRole.Accent, brush)
+        self.bar_time.setPalette(palette)
         self.bar_time.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.bar_time.setObjectName("bar_time")
         self.button_track = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_track.setGeometry(QtCore.QRect(16, 221, 61, 25))
+        self.button_track.setGeometry(QtCore.QRect(28, 147, 61, 25))
         font = QtGui.QFont()
         font.setFamily("Arial")
-        font.setPointSize(10)
+        font.setPointSize(9)
         font.setBold(True)
         font.setItalic(True)
         self.button_track.setFont(font)
         self.button_track.setStyleSheet("QPushButton {\n"
 "    background-color: rgb(253, 253, 253);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
 "    border-radius: 4px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
 "}")
         self.button_track.setObjectName("button_track")
         self.combo_track = QtWidgets.QComboBox(parent=self.frame_2)
-        self.combo_track.setGeometry(QtCore.QRect(80, 220, 151, 28))
+        self.combo_track.setGeometry(QtCore.QRect(89, 146, 151, 28))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.combo_track.setFont(font)
         self.combo_track.setStyleSheet("QComboBox {\n"
-"    padding-left: 2px;\n"
+"    padding-left: 4px;\n"
 "}")
         self.combo_track.setObjectName("combo_track")
         self.scrollArea = QtWidgets.QScrollArea(parent=self.frame_2)
-        self.scrollArea.setGeometry(QtCore.QRect(16, 250, 211, 191))
+        self.scrollArea.setGeometry(QtCore.QRect(28, 198, 211, 191))
         self.scrollArea.setStyleSheet("")
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setObjectName("scrollArea")
@@ -239,24 +300,32 @@ class Ui_GraphForm(object):
         self.gridLayout.addLayout(self.verticalLayout, 0, 0, 1, 1)
         self.scrollArea.setWidget(self.scrollAreaWidget)
         self.lineEdit_x_min = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_x_min.setGeometry(QtCore.QRect(19, 46, 91, 21))
+        self.lineEdit_x_min.setGeometry(QtCore.QRect(130, 40, 60, 23))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.lineEdit_x_min.setFont(font)
         self.lineEdit_x_min.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
 "}")
         self.lineEdit_x_min.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.lineEdit_x_min.setObjectName("lineEdit_x_min")
         self.lineEdit_x_max = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_x_max.setGeometry(QtCore.QRect(135, 46, 91, 21))
+        self.lineEdit_x_max.setGeometry(QtCore.QRect(203, 40, 60, 23))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.lineEdit_x_max.setFont(font)
         self.lineEdit_x_max.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
 "}")
         self.lineEdit_x_max.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.lineEdit_x_max.setObjectName("lineEdit_x_max")
         self.plainTextEdit = QtWidgets.QPlainTextEdit(parent=self.frame_2)
-        self.plainTextEdit.setGeometry(QtCore.QRect(113, 42, 21, 21))
+        self.plainTextEdit.setGeometry(QtCore.QRect(188, 38, 21, 21))
         font = QtGui.QFont()
-        font.setPointSize(11)
-        font.setBold(True)
+        font.setPointSize(10)
+        font.setBold(False)
         self.plainTextEdit.setFont(font)
         self.plainTextEdit.setStyleSheet("QPlainTextEdit {\n"
 "    background-color: rgba(255, 255, 255, 0);\n"
@@ -269,10 +338,10 @@ class Ui_GraphForm(object):
         self.plainTextEdit.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
         self.plainTextEdit.setObjectName("plainTextEdit")
         self.plainTextEdit_2 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
-        self.plainTextEdit_2.setGeometry(QtCore.QRect(113, 104, 21, 21))
+        self.plainTextEdit_2.setGeometry(QtCore.QRect(188, 102, 21, 21))
         font = QtGui.QFont()
-        font.setPointSize(11)
-        font.setBold(True)
+        font.setPointSize(10)
+        font.setBold(False)
         self.plainTextEdit_2.setFont(font)
         self.plainTextEdit_2.setStyleSheet("QPlainTextEdit {\n"
 "    background-color: rgba(255, 255, 255, 0);\n"
@@ -285,23 +354,162 @@ class Ui_GraphForm(object):
         self.plainTextEdit_2.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
         self.plainTextEdit_2.setObjectName("plainTextEdit_2")
         self.lineEdit_y_max = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_y_max.setGeometry(QtCore.QRect(135, 108, 91, 21))
+        self.lineEdit_y_max.setGeometry(QtCore.QRect(203, 72, 60, 23))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.lineEdit_y_max.setFont(font)
         self.lineEdit_y_max.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
 "}")
         self.lineEdit_y_max.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.lineEdit_y_max.setObjectName("lineEdit_y_max")
         self.lineEdit_y_min = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_y_min.setGeometry(QtCore.QRect(19, 108, 91, 21))
+        self.lineEdit_y_min.setGeometry(QtCore.QRect(130, 72, 60, 23))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.lineEdit_y_min.setFont(font)
         self.lineEdit_y_min.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
 "}")
         self.lineEdit_y_min.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.lineEdit_y_min.setObjectName("lineEdit_y_min")
-        self.plainTextEdit_5 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
-        self.plainTextEdit_5.setGeometry(QtCore.QRect(113, 166, 21, 21))
+        self.lineEdit_z_max = QtWidgets.QLineEdit(parent=self.frame_2)
+        self.lineEdit_z_max.setGeometry(QtCore.QRect(203, 104, 60, 23))
         font = QtGui.QFont()
-        font.setPointSize(11)
+        font.setPointSize(8)
+        self.lineEdit_z_max.setFont(font)
+        self.lineEdit_z_max.setStyleSheet("QLineEdit {\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
+"}")
+        self.lineEdit_z_max.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.lineEdit_z_max.setObjectName("lineEdit_z_max")
+        self.lineEdit_z_min = QtWidgets.QLineEdit(parent=self.frame_2)
+        self.lineEdit_z_min.setGeometry(QtCore.QRect(130, 104, 60, 23))
+        font = QtGui.QFont()
+        font.setPointSize(8)
+        self.lineEdit_z_min.setFont(font)
+        self.lineEdit_z_min.setStyleSheet("QLineEdit {\n"
+"    padding-left: 1px;\n"
+"    padding-right: 1px;\n"
+"}")
+        self.lineEdit_z_min.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.lineEdit_z_min.setObjectName("lineEdit_z_min")
+        self.button_time_play = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_time_play.setGeometry(QtCore.QRect(28, 470, 21, 21))
+        font = QtGui.QFont()
+        font.setFamily("Segoe UI Symbol")
+        font.setPointSize(10)
+        font.setBold(True)
+        font.setItalic(False)
+        self.button_time_play.setFont(font)
+        self.button_time_play.setStyleSheet("QPushButton {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
+"    border-radius: 4px;\n"
+"    padding-bottom: 2px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_time_play.setObjectName("button_time_play")
+        self.button_time_speed = QtWidgets.QPushButton(parent=self.frame_2)
+        self.button_time_speed.setGeometry(QtCore.QRect(56, 470, 28, 21))
+        font = QtGui.QFont()
+        font.setFamily("Arial")
+        font.setPointSize(8)
+        font.setBold(True)
+        font.setItalic(False)
+        self.button_time_speed.setFont(font)
+        self.button_time_speed.setStyleSheet("QPushButton {\n"
+"    background-color: rgb(253, 253, 253);\n"
+"    border: 1px solid rgb(100, 100, 100);\n"
+"    border-radius: 4px;\n"
+"}\n"
+"\n"
+"QPushButton:hover {\n"
+"    border: 1px solid #333;\n"
+"}\n"
+"\n"
+"QPushButton:pressed {\n"
+"    background-color: lightgray;\n"
+"     border: 1px solid #000;\n"
+"}\n"
+"\n"
+"QPushButton:disabled {\n"
+"    color: rgb(200,200,200);\n"
+"}")
+        self.button_time_speed.setObjectName("button_time_speed")
+        self.plainTextEdit_timestamp = QtWidgets.QPlainTextEdit(parent=self.frame_2)
+        self.plainTextEdit_timestamp.setGeometry(QtCore.QRect(60, 451, 181, 21))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.plainTextEdit_timestamp.sizePolicy().hasHeightForWidth())
+        self.plainTextEdit_timestamp.setSizePolicy(sizePolicy)
+        font = QtGui.QFont()
+        font.setPointSize(7)
+        font.setBold(True)
+        self.plainTextEdit_timestamp.setFont(font)
+        self.plainTextEdit_timestamp.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
+        self.plainTextEdit_timestamp.setStyleSheet("QPlainTextEdit {\n"
+"    background-color: rgba(255, 255, 255, 0);\n"
+"    border: 0px;\n"
+"}")
+        self.plainTextEdit_timestamp.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_timestamp.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_timestamp.setUndoRedoEnabled(False)
+        self.plainTextEdit_timestamp.setReadOnly(True)
+        self.plainTextEdit_timestamp.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit_timestamp.setObjectName("plainTextEdit_timestamp")
+        self.plainTextEdit_3 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
+        self.plainTextEdit_3.setGeometry(QtCore.QRect(188, 70, 21, 21))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        font.setBold(False)
+        self.plainTextEdit_3.setFont(font)
+        self.plainTextEdit_3.setStyleSheet("QPlainTextEdit {\n"
+"    background-color: rgba(255, 255, 255, 0);\n"
+"    border: 0px;\n"
+"}")
+        self.plainTextEdit_3.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_3.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_3.setUndoRedoEnabled(False)
+        self.plainTextEdit_3.setReadOnly(True)
+        self.plainTextEdit_3.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit_3.setObjectName("plainTextEdit_3")
+        self.plainTextEdit_4 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
+        self.plainTextEdit_4.setGeometry(QtCore.QRect(60, 13, 41, 21))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        font.setBold(True)
+        self.plainTextEdit_4.setFont(font)
+        self.plainTextEdit_4.setStyleSheet("QPlainTextEdit {\n"
+"    background-color: rgba(255, 255, 255, 0);\n"
+"    border: 0px;\n"
+"}")
+        self.plainTextEdit_4.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_4.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_4.setUndoRedoEnabled(False)
+        self.plainTextEdit_4.setReadOnly(True)
+        self.plainTextEdit_4.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit_4.setObjectName("plainTextEdit_4")
+        self.plainTextEdit_5 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
+        self.plainTextEdit_5.setGeometry(QtCore.QRect(145, 13, 41, 21))
+        font = QtGui.QFont()
+        font.setPointSize(10)
         font.setBold(True)
         self.plainTextEdit_5.setFont(font)
         self.plainTextEdit_5.setStyleSheet("QPlainTextEdit {\n"
@@ -314,95 +522,28 @@ class Ui_GraphForm(object):
         self.plainTextEdit_5.setReadOnly(True)
         self.plainTextEdit_5.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
         self.plainTextEdit_5.setObjectName("plainTextEdit_5")
-        self.lineEdit_z_max = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_z_max.setGeometry(QtCore.QRect(135, 170, 91, 21))
-        self.lineEdit_z_max.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
-"}")
-        self.lineEdit_z_max.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.lineEdit_z_max.setObjectName("lineEdit_z_max")
-        self.lineEdit_z_min = QtWidgets.QLineEdit(parent=self.frame_2)
-        self.lineEdit_z_min.setGeometry(QtCore.QRect(19, 170, 91, 21))
-        self.lineEdit_z_min.setStyleSheet("QLineEdit {\n"
-"    padding-left: 2px;\n"
-"}")
-        self.lineEdit_z_min.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight|QtCore.Qt.AlignmentFlag.AlignTrailing|QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.lineEdit_z_min.setObjectName("lineEdit_z_min")
-        self.button_time_play = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_time_play.setGeometry(QtCore.QRect(18, 528, 25, 21))
+        self.plainTextEdit_6 = QtWidgets.QPlainTextEdit(parent=self.frame_2)
+        self.plainTextEdit_6.setGeometry(QtCore.QRect(216, 13, 41, 21))
         font = QtGui.QFont()
-        font.setFamily("Arial")
         font.setPointSize(10)
         font.setBold(True)
-        font.setItalic(False)
-        self.button_time_play.setFont(font)
-        self.button_time_play.setStyleSheet("QPushButton {\n"
-"    background-color: rgb(253, 253, 253);\n"
-"    border: 2px solid rgb(100, 100, 100);\n"
-"    border-radius: 4px;\n"
-"}\n"
-"\n"
-"QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
-"}\n"
-"\n"
-"QPushButton:disabled {\n"
-"    color: rgb(200,200,200);\n"
-"}")
-        self.button_time_play.setObjectName("button_time_play")
-        self.button_time_speed = QtWidgets.QPushButton(parent=self.frame_2)
-        self.button_time_speed.setGeometry(QtCore.QRect(46, 528, 28, 21))
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(8)
-        font.setBold(True)
-        font.setItalic(False)
-        self.button_time_speed.setFont(font)
-        self.button_time_speed.setStyleSheet("QPushButton {\n"
-"    background-color: rgb(253, 253, 253);\n"
-"    border: 2px solid rgb(100, 100, 100);\n"
-"    border-radius: 4px;\n"
-"}\n"
-"\n"
-"QPushButton:hover {\n"
-"    border: 2px solid #333;\n"
-"}\n"
-"\n"
-"QPushButton:pressed {\n"
-"    background-color: lightgray;\n"
-"     border: 2px solid #000;\n"
-"}\n"
-"\n"
-"QPushButton:disabled {\n"
-"    color: rgb(200,200,200);\n"
-"}")
-        self.button_time_speed.setObjectName("button_time_speed")
-        self.plainTextEdit_timestamp = QtWidgets.QPlainTextEdit(parent=self.frame_2)
-        self.plainTextEdit_timestamp.setGeometry(QtCore.QRect(90, 515, 141, 21))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.plainTextEdit_timestamp.sizePolicy().hasHeightForWidth())
-        self.plainTextEdit_timestamp.setSizePolicy(sizePolicy)
-        font = QtGui.QFont()
-        font.setPointSize(8)
-        font.setBold(True)
-        self.plainTextEdit_timestamp.setFont(font)
-        self.plainTextEdit_timestamp.setStyleSheet("QPlainTextEdit {\n"
+        self.plainTextEdit_6.setFont(font)
+        self.plainTextEdit_6.setStyleSheet("QPlainTextEdit {\n"
 "    background-color: rgba(255, 255, 255, 0);\n"
 "    border: 0px;\n"
 "}")
-        self.plainTextEdit_timestamp.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.plainTextEdit_timestamp.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.plainTextEdit_timestamp.setUndoRedoEnabled(False)
-        self.plainTextEdit_timestamp.setReadOnly(True)
-        self.plainTextEdit_timestamp.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
-        self.plainTextEdit_timestamp.setObjectName("plainTextEdit_timestamp")
+        self.plainTextEdit_6.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_6.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.plainTextEdit_6.setUndoRedoEnabled(False)
+        self.plainTextEdit_6.setReadOnly(True)
+        self.plainTextEdit_6.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
+        self.plainTextEdit_6.setObjectName("plainTextEdit_6")
+        self.lineEdit_track_search = QtWidgets.QLineEdit(parent=self.frame_2)
+        self.lineEdit_track_search.setGeometry(QtCore.QRect(29, 175, 210, 21))
+        self.lineEdit_track_search.setStyleSheet("QLineEdit {\n"
+"    padding-left: 2px;\n"
+"}")
+        self.lineEdit_track_search.setObjectName("lineEdit_track_search")
         self.horizontalLayout.addWidget(self.frame_2)
 
         self.retranslateUi(GraphForm)
@@ -411,15 +552,18 @@ class Ui_GraphForm(object):
     def retranslateUi(self, GraphForm):
         _translate = QtCore.QCoreApplication.translate
         GraphForm.setWindowTitle(_translate("GraphForm", "Form"))
-        self.button_x.setText(_translate("GraphForm", "x-axis"))
-        self.button_y.setText(_translate("GraphForm", "y-axis"))
-        self.button_z.setText(_translate("GraphForm", "z-axis"))
-        self.button_time.setText(_translate("GraphForm", "time"))
-        self.button_track.setText(_translate("GraphForm", "track #"))
+        self.button_x.setText(_translate("GraphForm", "x"))
+        self.button_y.setText(_translate("GraphForm", "y"))
+        self.button_z.setText(_translate("GraphForm", "z"))
+        self.button_time.setText(_translate("GraphForm", "seq"))
+        self.button_track.setText(_translate("GraphForm", "track"))
         self.plainTextEdit.setPlainText(_translate("GraphForm", "~"))
         self.plainTextEdit_2.setPlainText(_translate("GraphForm", "~"))
-        self.plainTextEdit_5.setPlainText(_translate("GraphForm", "~"))
         self.button_time_play.setText(_translate("GraphForm", "▶"))
         self.button_time_speed.setText(_translate("GraphForm", "1.0x"))
         self.plainTextEdit_timestamp.setPlainText(_translate("GraphForm", "00:00:00/14:30:55"))
+        self.plainTextEdit_3.setPlainText(_translate("GraphForm", "~"))
+        self.plainTextEdit_4.setPlainText(_translate("GraphForm", "axis"))
+        self.plainTextEdit_5.setPlainText(_translate("GraphForm", "min"))
+        self.plainTextEdit_6.setPlainText(_translate("GraphForm", "max"))
 from pyqtgraph.opengl import GLViewWidget
